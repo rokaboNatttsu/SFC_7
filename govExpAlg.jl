@@ -44,3 +44,4 @@ function run(M, G, G_lst)
     end
 end
 run(M, G, G_lst)
+plot(1:length(G_lst), sort(G[G.>0.0], rev=true), xscale=:log10, yscale=:log10)
