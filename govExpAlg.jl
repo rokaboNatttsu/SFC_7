@@ -2,7 +2,7 @@ using StatsBase
 using StatsPlots
 
 β = 0.02
-M, T = 10000, 100
+M, T = 1000, 100
 G = zeros(M)
 G_lst = sample(1:M, Int64(round(M/5)), replace=false)
 Gm0 = 1.0
@@ -11,7 +11,7 @@ for i = G_lst
 end
 G_sum = [sum(G_lst)*(1 + β)^(t-1) for t=1:T]
 
-inn, outn = 200, 200
+inn, outn = 10, 10
 e = 0.1
 
 function govExp(M, G, G_lst, t)
@@ -44,4 +44,4 @@ function run(M, G, G_lst)
     end
 end
 run(M, G, G_lst)
-plot(1:length(G_lst), sort(G[G.>0.0], rev=true), xscale=:log10, yscale=:log10)
+plot(1:length(G_lst), sort(G[G.>0.0], rev=true), xscale=:log10, yscale=:log10, xlabel="Rank", ylabel="Value")
