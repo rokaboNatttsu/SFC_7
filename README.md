@@ -64,7 +64,7 @@ simulation.ipynbで実装した
 - $T_c=\tau_4(C_{-1}+G_{-1}+I_{-1}-W_{-1}-T_v)$
 - $G=(1+\beta)G_{-1}$
 - $g=\frac{G}{p}$
-- $C=\alpha_1(W_{-1}-T_a-T_i-r_L L_{-1}+P_{h-1}+S_{-1}) + \alpha_2(E_{h-1}+M_{-1}-L_{-1})$
+- $C=\alpha_1(W_{-1}-T_a-T_i-r_L L_{h-1}+P_{h-1}+S_{-1}) + \alpha_2(E_{h-1}+M_{h-1}-L_{h-1})$
 - $c=\frac{C}{p}$
 - $A=A_{-1}(1 + \mu_1 + \mu_2 \frac{i_{-1}}{k_{-1}})$
   - 技術水準上昇率が投資の一次関数として決まる。
@@ -135,27 +135,34 @@ simulation.ipynbで実装した
 |      | インデックス | 総数 |
 | :--- | :----------: | :--: |
 | 家計 |     $l$      | $L$  |
-| 企業 |     $m$      | $M$  |
+| 企業 |     $o$      | $O$  |
 | 銀行 |     $n$      | $N$  |
 
 変数の右上につけて、エージェント番号を区別する
 
 ## 2.1. モデルの説明
-- $p^m=\frac{(1+\nu_1+\nu_2\frac{L_{f-1}^m}{\sum_l C_{-1}^{ml}+ G_{-1}^m})(\sum_l W_{-1}^{ml}+T_{v-1}^m+T_{c-1}^m)}{u^T\gamma_1 k_{-1}^m}$
+- $p^o=\lambda_p \frac{(1+\nu_1+\nu_2\frac{\sum_n L_{f-1}^{on}}{\sum_l C_{-1}^{ol}+ G_{-1}^o})(\sum_l W_{-1}^{ol}+T_{v-1}^o+T_{c-1}^o+\delta k_{-1})}{u^T\gamma_1 k_{-1}^o} + (1-\lambda_p)\nu_3(p_{-1}^o-\overline{p}_{-1})$
   - マークアップ率は価格競争と投資資金回収率を主な引数とする関数で書かれるのでは？
-- $T_i^l=\tau_1 \sum_l W_{-1}^{ml}$
-- $T_a^l=\tau_2(\sum E_{h-1}^m+\sum M_{h-1}^n-\sum L_{h-1}^n)$
-- $T_v^m=\tau_3(\sum_l C_{-1}^{lm}+I_{-1}^m+G_{-1}^m)$
-- $T_c=\tau_4(\sum_l C_{-1}^{lm}+G_{-1}^m+I_{-1}^m-\sum_l W_{-1}^{lm}-T_v^m)$
+  - 価格競争の成分は？$\overline{p}_{-1}=\frac{\sum_m(\sum_l C^{ol}_{-1}+G_{-1}^o)}{\sum_m(\sum_l c^{ol}_{-1}+g_{-1}^o)}$に近づくように$\nu_3(p_{-1}^o-\overline{p}_{-1})$の項を追加する？
+  - 収穫逓増の効果を入れるべき？入れるとしたらどうやって？
+  - $\lambda_p$を適応ラメータにして、消費者が価格差に対しする商品の乗り換え速度に適応するようにしたほうが良いかも
+- $T_i^l=\tau_1 \sum_l W_{-1}^{ol}$
+- $T_a^l=\tau_2(\sum E_{h-1}^o+\sum M_{h-1}^n-\sum L_{h-1}^n)$
+- $T_v^o=\tau_3(\sum_l C_{-1}^{lo}+I_{-1}^o+G_{-1}^o)$
+- $T_c^o=\tau_4(\sum_l C_{-1}^{lo}+G_{-1}^o+I_{-1}^o-\sum_l W_{-1}^{lo}-T_v^o)$
 - 政府支出のアルゴリズム　govExpAlg2.jl のアルゴリズムを採用
-  - $G_{sum}=\sum G^m=G_0(1+\beta_1)^{(t-1)}$
-  - $x^m=\max[1, x_{-1}^m \{1+\beta_2(-1+\beta_3 randn)\}]$
-  - $z^m=\max(0, x^m-\beta_4)$
-  - $G^m=\frac{z^m G_{sum}}{\sum z^m}$
+  - $G_{suo}=\sum G^o=G_0(1+\beta_1)^{(t-1)}$
+  - $x^o=\max[1, x_{-1}^o \{1+\beta_2(-1+\beta_3 randn)\}]$
+  - $z^o=\max(0, x^o-\beta_4)$
+  - $G^o=\frac{z^o G_{suo}}{\sum z^o}$
   - 下限付きべき分布みたいなものを作って（xがこれにあたる）、一定の値を差し引いた後（zがこれに当たる）に、政府支出総額に合わせて大きくする。
-- $g^m=\frac{G^m}{p^m}$
+- $g^o=\frac{G^o}{p^o}$
+- $\sum_o C^{ol}=\alpha_1(\sum_m W_{-1}^{ol}-T_a^l-T_i^l-r_L \sum_n L_{h-1}^{ln}+\sum_m P_{h-1}^{ol}+\sum_n S_{-1}^{nl}) + \alpha_2(\sum_m E_{h-1}^{ol}+\sum_n M_{h-1}^{nl}-\sum_n L_{h-1}^{nl})$
+- if $c_{-1}^{ol} > 0$ and $\alpha_3 \frac{p^o-\overline{p}}{\overline{p}} < rand()$
+  - $c^{ol}=0$
+  - 価格競争のモデルを文献から探す
 - 
-- $C=\alpha_1(W_{-1}-T_a-T_i-r_L L_{-1}+P_{h-1}+S_{-1}) + \alpha_2(E_{h-1}+M_{-1}-L_{-1})$
+- 
 - $c=\frac{C}{p}$
 - $A=A_{-1}(1 + \mu_1 + \mu_2 \frac{i_{-1}}{k_{-1}})$
   - 技術水準上昇率が投資の一次関数として決まる。
