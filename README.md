@@ -298,7 +298,7 @@ AB_simulatio,n.jlで実装する予定
 | 企業株式純発行           |   $+\sum_o p_e \Delta e_h^{o,l}$   |     $-p_e \Delta e^o$      |   $+\sum_o p_e \Delta e_b^{o,n}$   |                      |
 | 銀行株式キャピタルゲイン | $+\sum_n \Delta p_f f_{-1}^{n,l}$  |                            |                                    |                      |
 | 銀行株式純発行           |    $+\sum_n p_f \Delta f^{n,l}$    |                            |    $-\sum_l p_f \Delta f^{n,l}$    |                      |
-| 現金の増減               |                                    |                            |           $+\Delta H^n$            | $-\sum_n \Delta H^n$ |
+| 現金の増減               |                                    |                            |        $+\sum_n \Delta H^n$        | $-\sum_n \Delta H^n$ |
 | 期末純資産               |             $-NW_h^l$              |         $-NW_f^o$          |             $-NW_b^n$              |       $-NW_g$        |
 
 期末純資産は、期首純資産から現金の増減までの合計に等しい
@@ -363,26 +363,26 @@ AB_simulatio,n.jlで実装する予定
 
 
 ## 2.5. モデルの式とアルゴリズム
-- $p^o=\lambda_p \frac{(1+\nu_1+\nu_2\frac{\sum_n L_{f-1}^{o,n}}{\sum_l C_{-1}^{o,l}+ G_{-1}^o})(\sum_l W_{-1}^{o,l}+T_{v-1}^o+T_{c-1}^o+\delta k_{-1})}{u^T\gamma_1 k_{-1}^o} + (1-\lambda_p)\nu_3(p_{-1}^o-\overline{p}_{-1})$
+- $p^o=\lambda_p \frac{(1+\nu_1+\nu_2\frac{\sum_n L_{f-1}^{o,n}}{\sum_l C_{-1}^{o,l}+ G_{-1}^o})(\sum_l W_{-1}^{l,o}+T_{v-1}^o+T_{c-1}^o+\delta k_{-1}^o)}{u^T\gamma_1 k_{-1}^o} + (1-\lambda_p)\nu_3(p_{-1}^o-\overline{p}_{-1})$
   - マークアップ率は価格競争と投資資金回収率を主な引数とする関数で書かれるのでは？
-  - 価格競争の成分は？ $\overline{p}_{-1}=\frac{\sum_m(\sum_l C^{o,l}_{-1}+G_{-1}^o)}{\sum_m(\sum_l c^{o,l}_{-1}+g_{-1}^o)}$ に近づくように $\nu_3(p_{-1}^o-\overline{p}_{-1})$ の項を追加する？
+  - 価格競争の成分は？ $\overline{p}_{-1}=\frac{\sum_o(\sum_l C^{o,l}_{-1}+G_{-1}^o)}{\sum_o(\sum_l c^{o,l}_{-1}+g_{-1}^o)}$ に近づくように $\nu_3(p_{-1}^o-\overline{p}_{-1})$ の項を追加する？
   - 収穫逓増の効果を入れるべき？入れるとしたらどうやって？
   - $\lambda_p$を適応ラメータにして、消費者が価格差に対しする商品の乗り換え速度に適応するようにしたほうが良いかも
-- $T_i^l=\tau_1 \sum_l (W_{-1}^{o,l}+P_{h-1}^{lo}+S_{-1}^{ln})$
-- $T_a^l=\tau_2(\sum E_{h-1}^o+\sum M_{h-1}^n-\sum L_{h-1}^n)$
-- $T_v^o=\tau_3(\sum_l C_{-1}^{l,o}+I_{-1}^o+G_{-1}^o)$
-- $T_c^o=\tau_4(\sum_l C_{-1}^{l,o}+G_{-1}^o+I_{-1}^o-\sum_l W_{-1}^{l,o}-T_v^o)$
+- $T_i^l=\tau_1 \sum_l (W_{-1}^{l,o}+P_{h-1}^{l,o}+S_{-1}^{l,n})$
+- $T_a^l=\tau_2(\sum_o E_{h-1}^{o,l}+\sum_n M_{h-1}^{n,l}-\sum_n L_{h-1}^{l,n})$
+- $T_v^o=\tau_3(\sum_l C_{-1}^{o,l}+I_{-1}^o+G_{-1}^o)$
+- $T_c^o=\tau_4(\sum_l C_{-1}^{o,l}+G_{-1}^o+I_{-1}^o-\sum_l W_{-1}^{l,o}-T_v^o)$
 - 政府支出のアルゴリズム　govExpAlg2.jl のアルゴリズムを採用
-  - $G_{suo}=\sum G^o=G_0(1+\beta_1)^{(t-1)}$
+  - $G_{sum}=\sum G^o=G_0(1+\beta_1)^{(t-1)}$
   - $x^o=\max[1, x_{-1}^o \{1+\beta_2(-1+\beta_3 randn)\}]$
   - $z^o=\max(0, x^o-\beta_4)$
-  - $G^o=\frac{z^o G_{suo}}{\sum z^o}$
+  - $G^o=\frac{z^o G_{sum}}{\sum z^o}$
   - 下限付きべき分布みたいなものを作って(xがこれにあたる)、一定の値を差し引いた後(zがこれに当たる)に、政府支出総額に合わせて大きくする。
 - $g^o=\frac{G^o}{p^o}$
-- $\sum_o C^{o,l}=\alpha_1(\sum_m W_{-1}^{o,l}-T_a^l-T_i^l-r_L \sum_n L_{h-1}^{l,n}+\sum_m P_{h-1}^{o,l}+\sum_n S_{-1}^{n,l}) + \alpha_2(\sum_m E_{h-1}^{o,l}+\sum_n M_{h-1}^{n,l}-\sum_n L_{h-1}^{n,l})$
+- $\sum_o C^{o,l}=\alpha_1(\sum_o W_{-1}^{o,l}-T_a^l-T_i^l-r_L \sum_n L_{h-1}^{l,n}+\sum_o P_{h-1}^{o,l}+\sum_n S_{-1}^{n,l}) + \alpha_2(\sum_o E_{h-1}^{o,l}+\sum_n M_{h-1}^{n,l}-\sum_n L_{h-1}^{n,l})$
 - 消費財の購入先のアルゴリズム
   - 前回消費財を買った企業$o$から別の企業に乗り換える確率は
-    - $\alpha_3 \frac{p^{o}-\overline{p}}{\overline{p}} < rand()$
+    - $rand() < \alpha_3 \frac{p^{o}-\overline{p}}{\overline{p}}$
     - とする。乗り換え先は「前期の消費財生産量($\sum_l c_{-1}^{o,l}$)＋前期の総消費量の一定割合($\alpha_4 \sum_o \sum_l c_{-1}^{o,l}$)」に比例する確率でランダムに決める
   - 今期の消費財購入先の企業を$o'$と書くことにすると、今期の消費水準は、
     - $c^{o'l}=\frac{\sum_o C^{o,l}}{p^{o'}}$
@@ -437,11 +437,11 @@ AB_simulatio,n.jlで実装する予定
 - $\sum_n \Delta L_f^{o,n}=\max\{-\sum_n L_{f-1}^{o,n}, (\lambda_3 + \lambda_4(\frac{P^o - P_f^o}{\sum_l E_{h-1}^{o,l} + \sum_l E_{b-1}^{o,l}} - r_L))(I^o+\sum_l W^{l,o}+T_v^o+T_c^o+r_L \sum_n L_{f-1}^{l,n} - \phi \sum_n M_{f-1}^{n,l})\}$
   - もっとリアルな貸付金水準の行動方程式はないか？要調査
 - $L_f^{o,n}=$
-  - $L_h^{l,n}$と同じ方法で振り分ける
+  - $L_h^{l,n}$ と同じ方法で振り分ける
 - 
 - ここからAB化の作業を再開する
 - 
-- $L_f=L_{f-1}+\Delta Lf$
+- $L_f=L_{f-1}+\Delta L_f$
 - $L=L_h+L_f$
 - $\Delta L=L-L_{-1}$
 - $\Delta e=\frac{1}{p_{-1}}(1-\lambda_3 - \lambda_4(\frac{P - P_f}{E_{h-1} + E_{b-1}} - r_L))(I+W+T_v+T_c+r_L L_{f-1} - \phi M_{f-1})$
