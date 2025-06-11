@@ -40,7 +40,7 @@
 | 預金     | $+\sum_l\sum_n M_h^{n,l}$ | $+\sum_o\sum_n M_f^{n,o}$ |       $-\sum_n M^n$       |               |      $0$      |
 | 貸付金   | $-\sum_l\sum_n L_h^{l,n}$ | $-\sum_o\sum_n L_f^{o,n}$ |       $+\sum_n L^n$       |               |      $0$      |
 | 企業株式 | $+\sum_l\sum_o E_h^{o,l}$ |       $-\sum_o E^o$       | $+\sum_n\sum_o E_b^{o,n}$ |               |    $+D_E$     |
-| 銀行株式 | $+\sum_l\sum_o F_h^{o,l}$ |                           |       $-\sum_n F^n$       |               |    $+D_F$     |
+| 銀行株式 | $+\sum_l\sum_n F_h^{n,l}$ |                           |       $-\sum_n F^n$       |               |    $+D_F$     |
 | 現金     |                           |                           |       $+\sum_n H^n$       | $-\sum_n H^n$ |      $0$      |
 | 純資産   |     $-\sum_l NW_h^l$      |     $-\sum_o NW_f^o$      |     $-\sum_n NW_b^n$      |    $-NW_g$    |     $-NW$     |
 | 合計     |            $0$            |            $0$            |            $0$            |      $0$      |      $0$      |

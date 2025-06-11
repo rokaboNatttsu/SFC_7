@@ -25,6 +25,7 @@ G0 = 1.0*O
 
 EMP = zeros(Int64, L,TIME)
 G_calc_item, G_potential = ones(N), ones(N)
+Cgrs = zeros(O)
 
 function G_func(t)
     Gsum = G0*(1+β1)^(t-1)
@@ -150,6 +151,40 @@ function ΔLf_and_Lf_func(t)
     end
 end
 
+function household_portfolio_func(t)
+    # 金融資産額の推定
+    Vs = sum(Mh[:,:,t-1], dims=1)+sum(Eh[:,:,t-1], dims=1)+sum(Fh[:,:,t-1], dims=1)+NLh[:,t]
+    # ポートフォリオ配分先の確率の重みの共通部分を計算
+    index = (Pf[:,t] - I[:,t]).*(P[:,t]-Pf[:,t])./(sum(Eh[:,:,t-1], dims=2)+sum(Eb[:,:,t-1], dims=2))  # 利益☓配当率
+    append!(index, (rL.*L[:,t-1]+sum(Pb[:,:,t], dims=2)).*sum(S[:,:,t], dims=1)./sum(Fh[:,:,t-1], dims=2))
+    index /= sum(index)
+    # ポートフォリオ配分先の数Int64(x[l])を決めるための準備。
+    x = 0.5*Vs./mean(sum(C[:,:,t], dims=1))
+    # 家計lのポートフォリオ計算
+    for l=1:L
+        # ポートフォリオ配分先に選ぶ確率の重み付けを決める
+        tmp = Eh[:,l,t-1]
+        append!(tmp, Fh[:,l,t-1])
+        prob = index + tmp/(sum(Eh[:,l,t-1])+sum(Fh[:,l,t-1]))
+        prob /= sum(prob)
+        # ポートフォリオ配分先のリストを作る
+        lst = sample(prob, Int64(x[l]))
+        if length(lst)==0
+            continue
+        end
+        # 収益率から、資産に占める株式の割合の目標を計算し、保有額を決める
+        EF_volume = Vs[l]*(λ1 + λ2*(sum(Ph[l,:,t])+sum(S[l,:,t]))/(sum(Eh[:,l,t-1])+sum(F[:,l,t-1])))
+        # EF_volume/length(lst)を単位としてlstの企業または銀行の株の保有割合を決める
+        for on in lst
+            if on <= O
+                Eh[on,l,t] += EF_volume/length(lst)
+            else
+                Fh[on-O,l,t] += EF_volume/length(lst)
+            end
+        end
+    end
+end
+
 function one_season(TIMERANGE)
     for t=TIMERANGE
         p[:,t] = λp*(1+ν1+ν2*sum(Lf[:,:,t-1], dims=2)./(sum(C[:,:,t-1], dims=2)+G[:,t-1])).*(sum(W[:,:,t-1], dims=1)+Tv[:,t-1]+Tc[:,t-1]+δ*k[:,t-1])./(uT*γ1*k[:,t-1])+(1-λp)*ν3*(p[:,t-1].-mean(p[:,t-1]))
@@ -191,6 +226,6 @@ function one_season(TIMERANGE)
         Δe[:,t] = 1/p[:,t-1]*(1-λ3-λ4*((P[:,t]-Pf[:,t])./(sum(Eh[:,:,t-1], dims=2)+sum(Eb[:,:,t-1], dims=2))-rL)).*(I[:,t]+sum(W[:,:,t], dims=1)+Tv[:,t]+Tc[:,t]+rL*sum(Lf[:,:,t-1], dims=2)-ϕ*sum(Mf[:,:,t-1], dims=1))
         E[:,t] = E[:,t-1] + pe[:,t-1].*Δe[:,t]
         e[:,t] = e[:t-1] + Δe[:,t]
-        
+        household_portfolio_func(t)
     end
 end

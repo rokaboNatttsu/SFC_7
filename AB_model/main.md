@@ -93,10 +93,13 @@ AB_simulatio,n.jlで実装する予定
 - $\Delta e^o=\frac{1}{p_{-1}^o}\{1-\lambda_3 - \lambda_4(\frac{P^o - P_f^o}{\sum_l E_{h-1}^{o,l} + \sum_n E_{b-1}^{o,n}} - r_L)\}(I^o+\sum_l W^{l,o}+T_v^o+T_c^o+r_L \sum_n L_{f-1}^{o,n} - \phi \sum_n M_{f-1}^{n,o})$
 - $E^o=E_{-1}^o+p_{e-1}^o\Delta e^o$
 - $e^o=e_{-1}^o+\Delta e^o$
+- 家計はどうやって株式保有額を決めるのか
+  - どこの株を保有するかの意思決定
+    - 利益☓配当率　で重み付けされたランダムサンプリングと、前期保有していた銘柄を持ち続ける傾向の合成
+  - $E_h^l=$
+  - $F_h^l=$
 - 
 - ここからAB化の作業を再開する
-  - 家計はどうやって株式保有額を決めるのか
-- $E_h^l=(\lambda_1+\lambda_2\frac{P_{h-1}^{l,o}}{E_{h-1}^o})(NL_h+\Delta L_h+E_{h-1}+M_{h-1})$
 - $E_b=(1-\lambda_5 r_L+\lambda_5 \frac{P_{b-1}}{E_{b-1}})(NL_b+E_{b-1})$
 - $p_e=\frac{E_h+E_b}{e}$
 - $e_h=\frac{E_h}{p_e}$
