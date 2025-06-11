@@ -186,6 +186,11 @@ function one_season(TIMERANGE)
         Lh_func(t)
         ΔLh[:,:,t] = Lh[:,:,t] - Lh[:,:,t-1]
         ΔLf_and_Lf_func(t)
+        L[:,t] = sum(Lh[:,:,t], dims=1) + sum(Lf[:,:,t], dims=1)
+        ΔL[:,t] = L[:,t] - L[:t-1]
+        Δe[:,t] = 1/p[:,t-1]*(1-λ3-λ4*((P[:,t]-Pf[:,t])./(sum(Eh[:,:,t-1], dims=2)+sum(Eb[:,:,t-1], dims=2))-rL)).*(I[:,t]+sum(W[:,:,t], dims=1)+Tv[:,t]+Tc[:,t]+rL*sum(Lf[:,:,t-1], dims=2)-ϕ*sum(Mf[:,:,t-1], dims=1))
+        E[:,t] = E[:,t-1] + pe[:,t-1].*Δe[:,t]
+        e[:,t] = e[:t-1] + Δe[:,t]
         
     end
 end
