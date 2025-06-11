@@ -1,4 +1,5 @@
 using StatsPlots
+using StatsBase
 
 L, O, N, TIME = 10000, 100, 10, 100
 
@@ -22,6 +23,7 @@ NWh, NWf, NWb, NWg, NWg = zeros(L, TIME), zeros(O, TIME), zeros(N, TIME), zeros(
 rL = 0.02
 G0 = 1.0*O
 
+EMP = zeros(Int64, L,TIME)
 G_calc_item, G_potential = ones(N), ones(N)
 
 function G_func(t)
@@ -50,20 +52,107 @@ function c_func(t)
                 end
             end
         else
-            tmp = rand()
-            for new_o=1:O
-                if tmp <= r[new_o]
-                    c[new_o,l,t] = Cs[l]/p[new_o,t]
-                    break
+            new_o = searchsortedlast(r, rand())
+            c[new_o,l,t] = Cs[l]/p[new_o,t]
+        end
+    end
+end
+
+function w_and_W_func(t)
+    for l=1:L
+        if EMP[l,t-1] > 0
+            if rand() < ζ3
+                continue
+            else
+                EMP[l,t] = EMP[l,t-1]
+                w[l,t] = (1-ζ1)*w[l,t-1]+ζ1*w[l,t-1]*(1+ζ2*abs(randn()))
+                W[l,EMP[l,t],t] = w[l,t]
+            end
+        else
+            offers = [Int64(max(0, (u[o,t-1]*k[o,t-1]-A[o,t]*sum(w[:,o,t-1]>0))/A[o,t])) for o=1:O]
+            prob = deepcopy(offers)
+            for o=2:O
+                prob[o,t] += prob[o,t-1]
+            end
+            prob /= prob[end]
+            appli = [[] for _ = 1:O]
+            for l=1:L
+                if EMP[l,t-1] == 0
+                    o = searchsortedlast(prob, rand())
+                    push!(appli[o], l)
                 end
             end
+            for o=1:O
+                if offers[o] > 0 & length(appli[o]) > 0
+                    much = collect(Set(sample(appli[o], offers[o])))
+                    for x=1:length(much)
+                        l = much[x]
+                        EMP[l,t] = o
+                        w[l,t] = (1-ζ1)*w[l,t-1]+ζ1*w[l,t-1]*(1+ζ2*abs(randn()))
+                        W[l,EMP[l,t],t] = w[l,t]
+                    end
+                end
+            end
+        end
+    end
+    for l=1:L
+        if EMP[l,t]==0
+            w[l,t] = (1-ζ1)*w[l,t-1]+ζ1*w[l,t-1]*(1-ζ3*abs(randn()))
+        end
+    end
+end
+
+function Lh_func(t)
+    Lhs = ϵ1*NLh[:,t] + ϵ2*sum(C[:,:,t], dims=1)
+    for l=1:L
+        alreadyexist = false
+        for n=1:N
+            if Lh[l,n,t-1] > 0.0
+                Lh[l,n,t] = Lhs[l]
+                alreadyexist = true
+                break
+            end
+        end
+        if ! alreadyexist
+            prob = zeros(N)
+            prob[1] = NWb[1,t]
+            for n=2:N
+                prob[n] = NWb[n,t] + prob[t-1]
+            end
+            prob /= prob[end]
+            n = searchsortedlast(prob, rand())
+            Lh[l,n,t] = Lhs[n]
+        end
+    end
+end
+
+function ΔLf_and_Lf_func(t)
+    ΔLfs = max.(-sum(Lf[:,:,t-1], dims=2), (λ3+λ4*((P[:,t]-Pf[:,t])./(sum(Eh[:,:,t-1], dims=2)+sum(Eb[:,:,t-1], dims=2))-rL)).*(I[:,t]+sum(W[:,:,t], dims=1)+Tv[:,t]+Tc[:,t]+rL*sum(Lf[:,:,t-1], dims=2)-ϕ*sum(Mf[:,:,t-1], dims=1)))
+    for o=1:O
+        alreadyexist = false
+        for n=1:N
+            if Lf[o,n,t-1] > 0.0
+                Lf[o,n,t] = Lf[o,n,t-1] + ΔLfs[o]
+                alreadyexist = true
+                break
+            end
+        end
+        if ! alreadyexist
+            prob = zeros(N)
+            prob[1] = NWb[1,t]
+            for n=2:N
+                prob[n] = NWb[n,t] + prob[t-1]
+            end
+            prob /= prob[end]
+            n = searchsortedlast(prob, rand())
+            Lf[o,n,t] = ΔLfs[o]
         end
     end
 end
 
 function one_season(TIMERANGE)
     for t=TIMERANGE
-        p[:,t] = λp*(1+ν1+ν2*sum(Lf[:,:,t-1], dims=2)./(sum(C[:,:,t-1], dims=2)+G[:,t-1]))*(sum(W[:,:,t-1], dims=1)+Tv[:,t-1]+Tc[:,t-1]+δ*k[:,t-1])/(uT*γ1*k[:,t-1])+(1-λp)*ν3*(p[:,t-1].-mean(p[:,t-1]))
+        p[:,t] = λp*(1+ν1+ν2*sum(Lf[:,:,t-1], dims=2)./(sum(C[:,:,t-1], dims=2)+G[:,t-1])).*(sum(W[:,:,t-1], dims=1)+Tv[:,t-1]+Tc[:,t-1]+δ*k[:,t-1])./(uT*γ1*k[:,t-1])+(1-λp)*ν3*(p[:,t-1].-mean(p[:,t-1]))
         Ti[:,t] = τ1*(W[:,o,t-1]+P[:,o,t-1]+S[:,n,t-1])
         Ta[:,t] = τ2*(sum(Eh[:,:,t-1], dims=1)+sum(Mh[:,:,t-1], dims=1)-sum(Lh[:,:,t-1], dims=2))
         Tv[:,t] = τ3*(sum(C[:,:,t-1], dims=2)+I[:,t-1]+G[:,t-1])
@@ -76,6 +165,27 @@ function one_season(TIMERANGE)
         end
         A[:,t] = A[:,t-1]*(1+μ1.+μ2*i[:,t-1]./k[:,t-1])
         u[:,t] = (sum(c[:,:,t], dims=2)+i[:,t]+g[:,t])./(γ1*k[:,t-1])
-        i[:,t] = 
+        i[:,t] = δ*k[:,t-1]+(u[:,t-1]-uT).*γ2.*k[:,t-1]+γ3*(sum(Mf[:,:,t-1], dims=1)-sum(Lf[:,:,t-1], dims=2))./p[:,t-1]
+        I[:,t] = p[:,t].*i[:,t]
+        k[:,t] = (1-δ).*k[:,t-1]+i[:,t]
+        K[:,t] = p[:,t].*k[:,t]
+        w_and_W_func(t)
+        P[:,t] = sum(C[:,:,t], dims=2)+G[:,t]+I[:,t]-sum(W[:,:,t], dims=1)-Tc[:,t]-Tv[:,t]-rL*sum(Lf[:,:,t-1], dims=2)
+        for o=1:O
+            Ph[:,o,t] = max(0.0, θ1*(P[o,t]-I[o,t])+θ2*(sum(Mf[:,o,t-1])-sum(Lf[o,:,t-1]))).*eh[o,:,t]./e[o,t]
+            Pb[:,o,t] = max(0.0, θ1*(P[o,t]-I[o,t])+θ2*(sum(Mf[:,o,t-1])-sum(Lf[o,:,t-1]))).*eb[o,:,t]./e[o,t]
+        end
+        Pf[:,t] = P[:,t] - sum(Ph[:,:,t], dims=1) - sum(Pb[:,:,t], dims=1)
+        for n=1:N
+            S[:,n,t] = (θ3*(rL*L[n,t-1]+sum(Pb[n,:,t]))+θ4*sum(Eb[:,n,t-1])).*fb[:,n,t-1]./f[n,t-1]
+        end
+        NLh[:,t] = -sum(C[:,:,t], dims=1) + sum(W[:,:,t], dims=2)-Ti[:,t]-Ta[:,t]-rL*sum(Lh[:,:,t-1], dims=2)+sum(Ph[:,:,t], dims=2)+sum(S[:,:,t], dims=2)
+        NLf[:,t] = -I[:,t] + Pf[:,t]
+        NLb[:,t] = rL*L[:,t-1] + sum(Pb[:,:,t], dims=1) - sum(S[:,:,t], dims=1)
+        NLg[t] = -sum(G[:,t])+sum(Ti[:,t])+sum(Ta[:,t])+sum(Tv[:,t])+sum(Tc[:,t])
+        Lh_func(t)
+        ΔLh[:,:,t] = Lh[:,:,t] - Lh[:,:,t-1]
+        ΔLf_and_Lf_func(t)
+        
     end
 end

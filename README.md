@@ -397,32 +397,31 @@ AB_simulatio,n.jlで実装する予定
 - $k^o=(1-\delta)k_{-1}^o+i^o$
 - $K^o=p^o k^o$
 - 就業・失業判定アルゴリズム　外部にファイルを作る
-  - if $\sum_o EMP_{-1}^{o,l}=1$
+- $EMP^l$ は失業時に0，就業時にoを値に持つ
+  - if $\sum_o EMP_{-1}^{l}>0$
     - if $rand() < \zeta_3$
-      - $EMP^{o,l}=0 \ \ \  \forall o$
-      - $\sum_o EMP^{o,l}=0$
+      - $EMP^{l}=0$
       - 失業者への社会保障をモデル含めることを検討
-      - $w^l=(1-\zeta_1)w_{-1}^l + \zeta_1 w_{-1}[1 - \zeta_3 abs\{rand()\}]$
+      - $w^l=(1-\zeta_1)w_{-1}^l + \zeta_1 w_{-1}^l[1 - \zeta_3 abs\{randn()\}]$
     - else
-      - $EMP^{o,l}=EMP_{-1}^{o,l} \ \ \  \forall o$
-      - $\sum_o EMP^{o,l}=1$
-      - $w^l=(1-\zeta_1)w_{-1}^l + \zeta_1 w_{-1}[1 + \zeta_2 abs\{rand()\}]$
+      - $EMP^{l}=EMP_{-1}^{l}$
+      - $w^l=(1-\zeta_1)w_{-1}^l + \zeta_1 w_{-1}[1 + \zeta_2 abs\{randn()\}]$
+      - $W^{l,EMP^l} = w^l$
   - else
     - 企業が Int64($\max[0, \frac{1}{A^o}\{u_{-1}^o k_{-1}^o-A^o \sum_l (w_{-1}^{l,o}>0)\}]$) 人の求人を出す
     - 求人数に比例する確率で失業者は応募する。応募の中から定員までランダムに雇用する
     - $o'$で雇用が決まった場合
-      - $w^l=(1-\zeta_1)w_{-1}^l + \zeta_1 w_{-1}[1 + \zeta_2 abs\{rand()\}]$
-      - $EMP^{o'l}=1$
-      - $EMP^{o,l}=0 \ \ \ (o\neq o')$
+      - $w^l=(1-\zeta_1)w_{-1}^l + \zeta_1 w_{-1}^l[1 + \zeta_2 abs\{randn()\}]$
+      - $EMP^{l}=o'$
+      - $W^{l,EMP^l} = w^l$
     - 失業が続く場合
-      - $w^l=(1-\zeta_1)w_{-1}^l + \zeta_1 w_{-1}[1 - \zeta_3 abs\{rand()\}]$
-- $W^{l,o}=w^l EMP^{o,l}$
+      - $w^l=(1-\zeta_1)w_{-1}^l + \zeta_1 w_{-1}^l[1 - \zeta_3 abs\{randn()\}]$
 - $P^o=\sum_l C^{o,l}+G^o+I^o-\sum_l W^{l,o}-T_c^o-T_v^o-r_L \sum_n L_{f-1}^{o,n}$
 - $P_h^{l,o}=\max\{0, \theta_1(P^o-I^o)+\theta_2(\sum_n M_{f-1}^{o,n}-\sum_n L_{f-1}^{o,n})\}\frac{e_{h-1}^{o,l}}{e_{-1}^o}$
 - $P_b^{n,o}=\max\{0, \theta_1(P^o-I^o)+\theta_2(\sum_n M_{f-1}^{o,n}-\sum_n L_{f-1}^{o,n})\}\frac{e_{b-1}^{o,n}}{e_{-1}^o}$
 - $P_f^o=P^o-\sum_l P_h^{l,o}-\sum_n P_b^{n,o}$
 - $S^{l,n}=\{\theta_3(r_L L_{-1}^n+\sum_o P_b^{n,o})+\theta_4 \sum_o E_{b-1}^{o,n}\}\frac{f_{h-1}^{l,n}}{f_{-1}^n}$
-- $NL_h^l=-\sum_o C^{o,l}+\sum_o W^{l,o}-T_i^l-T_a^l-r_L L_{h-1}^{l,n}+\sum_o P_h^{l,o}+\sum_n S^{l,n}$
+- $NL_h^l=-\sum_o C^{o,l}+\sum_o W^{l,o}-T_i^l-T_a^l-r_L \sum_n L_{h-1}^{l,n}+\sum_o P_h^{l,o}+\sum_n S^{l,n}$
 - $NL_f^o=-I^o+P_f^o$
 - $NL_b^n=r_L L_{-1}^n+\sum_o P_b^{o,n}-\sum_l S^{l,n}$
 - $NL_g=-\sum_o G^o+\sum_l T_i^l+\sum_l T_a^l+\sum_o T_v^o+\sum_o T_c^o$
@@ -430,18 +429,16 @@ AB_simulatio,n.jlで実装する予定
   - 家計は借入先をどう選ぶ？
     - 既存の借入先があればそれを継続する
     - 既存の借入先がなければ、$NW_b^n$に比例する確率で借入先に選ぶ
+    - $L_h^{l,n}=$
     - 本当は銀行ごとに信用スコアを計算して金利が安いところから借り入れようとするとか、既存の借入先を維持する傾向を持つとか、借入先を2つ以上にすることもあるとか、そういう効果を入れたいが、モデルの複雑さを抑えるためのアドホックな仮定として導入することにする。
-- $L_h^{l,n}=$
-  - ここのアルゴリズムも別でファイルに書く。
 - $\Delta L_h^{l,n}=L_h^{l,n}-L_{h-1}^{l,n}$
 - $\sum_n \Delta L_f^{o,n}=\max\{-\sum_n L_{f-1}^{o,n}, (\lambda_3 + \lambda_4(\frac{P^o - P_f^o}{\sum_l E_{h-1}^{o,l} + \sum_l E_{b-1}^{o,l}} - r_L))(I^o+\sum_l W^{l,o}+T_v^o+T_c^o+r_L \sum_n L_{f-1}^{l,n} - \phi \sum_n M_{f-1}^{n,l})\}$
   - もっとリアルな貸付金水準の行動方程式はないか？要調査
-- $L_f^{o,n}=$
   - $L_h^{l,n}$ と同じ方法で振り分ける
+- $L_f^{o,n}=L_{f-1}^{o,n}+\Delta L_f^{o,n}$
 - 
 - ここからAB化の作業を再開する
 - 
-- $L_f=L_{f-1}+\Delta L_f$
 - $L=L_h+L_f$
 - $\Delta L=L-L_{-1}$
 - $\Delta e=\frac{1}{p_{-1}}(1-\lambda_3 - \lambda_4(\frac{P - P_f}{E_{h-1} + E_{b-1}} - r_L))(I+W+T_v+T_c+r_L L_{f-1} - \phi M_{f-1})$
