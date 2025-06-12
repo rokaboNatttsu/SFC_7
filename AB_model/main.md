@@ -25,7 +25,7 @@ AB_simulatio,n.jlで実装する予定
 - $T_a^l=\tau_2(\sum_o E_{h-1}^{o,l}+\sum_n M_{h-1}^{n,l}-\sum_n L_{h-1}^{l,n})$
 - $T_v^o=\tau_3(\sum_l C_{-1}^{o,l}+I_{-1}^o+G_{-1}^o)$
 - $T_c^o=\tau_4(\sum_l C_{-1}^{o,l}+G_{-1}^o+I_{-1}^o-\sum_l W_{-1}^{l,o}-T_v^o)$
-- 政府支出のアルゴリズム　govExpAlg2.jl のアルゴリズムを採用
+- 政府支出のアルゴリズム
   - $G_{sum}=\sum G^o=G_0(1+\beta_1)^{(t-1)}$
   - $x^o=\max[1, x_{-1}^o \{1+\beta_2(-1+\beta_3 randn)\}]$
   - $z^o=\max(0, x^o-\beta_4)$
