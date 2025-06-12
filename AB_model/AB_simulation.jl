@@ -106,23 +106,11 @@ end
 function Lh_func(t)
     Lhs = ϵ1*NLh[:,t] + ϵ2*sum(C[:,:,t], dims=1)
     for l=1:L
-        alreadyexist = false
         for n=1:N
-            if Lh[l,n,t-1] > 0.0
+            if Mh[n,l,t-1] > 0.0
                 Lh[l,n,t] = Lhs[l]
-                alreadyexist = true
                 break
             end
-        end
-        if ! alreadyexist
-            prob = zeros(N)
-            prob[1] = NWb[1,t]
-            for n=2:N
-                prob[n] = NWb[n,t] + prob[t-1]
-            end
-            prob /= prob[end]
-            n = searchsortedlast(prob, rand())
-            Lh[l,n,t] = Lhs[n]
         end
     end
 end
@@ -130,23 +118,23 @@ end
 function ΔLf_and_Lf_func(t)
     ΔLfs = max.(-sum(Lf[:,:,t-1], dims=2), (λ3+λ4*((P[:,t]-Pf[:,t])./(sum(Eh[:,:,t-1], dims=2)+sum(Eb[:,:,t-1], dims=2))-rL)).*(I[:,t]+sum(W[:,:,t], dims=1)+Tv[:,t]+Tc[:,t]+rL*sum(Lf[:,:,t-1], dims=2)-ϕ*sum(Mf[:,:,t-1], dims=1)))
     for o=1:O
-        alreadyexist = false
         for n=1:N
-            if Lf[o,n,t-1] > 0.0
-                Lf[o,n,t] = Lf[o,n,t-1] + ΔLfs[o]
-                alreadyexist = true
+            if Mf[n,o,t-1] > 0.0
+                if Lf[o,n,t-1] > 0.0
+                    Lf[o,n,t] = Lf[o,n,t-1] + ΔLfs[o]
+                    ΔLf[o,n,t] = ΔLfs[o]
+                else
+                    for n2=1:N
+                        if Lf[o,n2,t-1] > 0.0
+                            Lf[o,n2,t] = Lf[o,n,t-1] + ΔLfs[o]
+                            ΔLf[o,n,t-1] = -Lf[o,n,t-1]
+                            ΔLf[o,n2,t] = Lf[o,n,t-1] + ΔLfs[o]
+                            break
+                        end
+                    end
+                end
                 break
             end
-        end
-        if ! alreadyexist
-            prob = zeros(N)
-            prob[1] = NWb[1,t]
-            for n=2:N
-                prob[n] = NWb[n,t] + prob[t-1]
-            end
-            prob /= prob[end]
-            n = searchsortedlast(prob, rand())
-            Lf[o,n,t] = ΔLfs[o]
         end
     end
 end
@@ -155,8 +143,9 @@ function household_portfolio_func(t)
     # 金融資産額の推定
     Vs = sum(Mh[:,:,t-1], dims=1)+sum(Eh[:,:,t-1], dims=1)+sum(Fh[:,:,t-1], dims=1)+NLh[:,t]
     # ポートフォリオ配分先の確率の重みの共通部分を計算
-    index = (Pf[:,t] - I[:,t]).*(P[:,t]-Pf[:,t])./(sum(Eh[:,:,t-1], dims=2)+sum(Eb[:,:,t-1], dims=2))  # 利益☓配当率
-    append!(index, (rL.*L[:,t-1]+sum(Pb[:,:,t], dims=2)).*sum(S[:,:,t], dims=1)./sum(Fh[:,:,t-1], dims=2))
+    index = ψ1*(Pf[:,t] - I[:,t])+ψ2*(sum(Mf[:,:,t-1], dims=1)-sum(Lf[:,:,t-1], dims=2))+ψ3*(P[:,t]-Pf[:,t])./(sum(Eh[:,:,t-1], dims=2)+sum(Eb[:,:,t-1], dims=2))
+    append!(index, ψ1*(rL.*L[:,t-1]+sum(Pb[:,:,t], dims=2))+ψ3*sum(S[:,:,t], dims=1)./sum(Fh[:,:,t-1], dims=2))
+    index = max.(zeros(O), index)
     index /= sum(index)
     # ポートフォリオ配分先の数Int64(x[l])を決めるための準備。
     x = 0.5*Vs./mean(sum(C[:,:,t], dims=1))
@@ -168,7 +157,7 @@ function household_portfolio_func(t)
         prob = index + tmp/(sum(Eh[:,l,t-1])+sum(Fh[:,l,t-1]))
         prob /= sum(prob)
         # ポートフォリオ配分先のリストを作る
-        lst = sample(prob, Int64(x[l]))
+        lst = sample(1:(O+N), Weights(prob), Int64(x[l]))
         if length(lst)==0
             continue
         end
@@ -181,6 +170,75 @@ function household_portfolio_func(t)
             else
                 Fh[on-O,l,t] += EF_volume/length(lst)
             end
+        end
+    end
+end
+
+function bank_portfolio(t)
+    # 企業の株の保有額の見積もり
+    Vs = sum(Eb[:,:,t-1], dims=1)+NLh[:,t]
+    # ポートフォリオ配分先の確率の重みの共通部分を計算
+    index = ψ1*(Pf[:,t] - I[:,t])+ψ2*(sum(Mf[:,:,t-1], dims=1)-sum(Lf[:,:,t-1], dims=2))+ψ3*(P[:,t]-Pf[:,t])./(sum(Eh[:,:,t-1], dims=2)+sum(Eb[:,:,t-1], dims=2))
+    index = exp.(index./(sum(Eh[:,:,t])+sum(Eb[:,:,t])))
+    index /= sum(index)
+    # 銀行nのポートフォリオ計算
+    for n=1:N
+        # ポートフォリオ配分割合を決める
+        prob = index*abs.(1+0.1*randn(N)) + Eb[:,n,t-1]/(sum(Eb[:,n,t-1]))
+        prob /= sum(prob)
+        # 収益率から、保有する株式の総額目標を計算
+        E_volume = Vs[n]*(1 + λ2*sum(Pb[n,:,t])/sum(Eb[:,n,t-1]))
+        # ポートフォリオ決定
+        Eb[:,n,t] = E_volume*prob
+    end
+end
+
+function ΔMh_and_Mh_func(t)
+    change = rand(L) < ξ1
+    prob = max.(zeros(N), NWb[:,t-1])
+    prob /= sum(prob)
+    for l=1:L
+        ΔMh_sum = NLh[l,t]-sum(pe[:,t-1].*Δeh[:,l,t])+sum(ΔLh[l,:,t])
+        last_n = 0
+        for n=1:N
+            if Mh[n,l,t-1] > 0.0
+                last_n = n
+                break
+            end
+        end
+        if change
+            n = sample(1:N, Weights(prob))
+            Mh[n,l,t] = Mh[last_n,l,t-1] + ΔMh_sum
+            ΔMh[n,l,t] = Mh[last_n,l,t-1] + ΔMh_sum
+            ΔMh[last_n,l,t] = -Mh[last_n,l,t-1]
+        else
+            Mh[n,l,t] = Mh[n,l,t-1] + ΔMh_sum
+            ΔMh[n,l,t] = ΔMh_sum
+        end
+    end
+end
+
+function ΔMf_and_Mf_func(t)
+    change = rand(O) < ξ2
+    prob = max.(zeros(N), NWb[:,t-1])
+    prob /= sum(prob)
+    for o=1:O
+        ΔMf_sum = NLf[o,t]+sum(ΔLf[o,:,t])+sum(pe[:,t-1].*Δe[:,t])
+        last_n = 0
+        for n=1:N
+            if Mf[n,o,t-1] > 0.0
+                last_n = n
+                break
+            end
+        end
+        if change
+            n = sample(1:N, Weights(prob))
+            Mf[n,o,t] = Mf[last_n,o,t-1] + ΔMf_sum
+            ΔMf[n,o,t] = Mf[last_n,o,t-1] + ΔMf_sum
+            ΔMf[last_n,o,t] = -Mf[last_n,o,t-1]
+        else
+            Mf[n,o,t] = Mf[n,o,t-1] + ΔMf_sum
+            ΔMf[n,o,t] = ΔMf_sum
         end
     end
 end
@@ -227,5 +285,20 @@ function one_season(TIMERANGE)
         E[:,t] = E[:,t-1] + pe[:,t-1].*Δe[:,t]
         e[:,t] = e[:t-1] + Δe[:,t]
         household_portfolio_func(t)
+        bank_portfolio(t)
+        pe[:,t] = (sum(Eh[:,:,t], dims=2)+sum(Eb[:,:,t], dims=2))./e[:,t]
+        for l=1:L
+            eh[:,l,t] = Eh[:,l,t]./pe[:,t]
+        end
+        for n=1:N
+            eb[:,n,t] = Eb[:,n,t]./pe[:,t]
+        end
+        Δeh[:,:,t] = eh[:,:,t] - eh[:,:,t-1]
+        Δeb[:,:,t] = eb[:,:,t] - eb[:,:,t-1]
+        ΔMh_and_Mh_func(t)
+        ΔMf_and_Mf_func(t)
+        M[:,t] = sum(Mf[:,:,t], dims=2)+sum(Mf[:,:,t], dims=2)
+        ΔM[:,t] = M[:,t] - M[:,t-1]
+        
     end
 end
