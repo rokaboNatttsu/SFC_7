@@ -299,6 +299,16 @@ function one_season(TIMERANGE)
         ΔMf_and_Mf_func(t)
         M[:,t] = sum(Mf[:,:,t], dims=2)+sum(Mf[:,:,t], dims=2)
         ΔM[:,t] = M[:,t] - M[:,t-1]
-        
+        ΔH[:,t] = NLb[:,t]-[sum(pe[:,t].*Δeb[:,n,t]) for n=1:N]+ΔM[:,t]-ΔL[:,t]
+        H[:,t] = H[:,t-1] + ΔH[:,t]
+        NWh[:,t] = sum(Mh[:,:,t], dims=1)-sum(Lh[:,:,t], dims=2)+sum(Eh[:,:,t], dims=1)
+        NWf[:,t] = K[:,t]+sum(Mf[:,:,t], dims=1)+sum(Lf[:,:,t], dims=2)-E[:,t]
+        NWb[:,t] = -M[:,t]+L[:,t]+sum(Eb[:,:,t], dims=1)+H[:,t]
+        NWg[t] = sum(H[:,t])
+        DE[t] = sum(E[:,t])+sum(Eh[:,:,t])+sum(Eb[:,:,t])
+        DF[t] = sum(Fh[:,:,t])-sum(F[:,t])
+        # 倒産処理
+
+        # 起業
     end
 end

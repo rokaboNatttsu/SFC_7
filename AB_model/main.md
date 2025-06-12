@@ -115,26 +115,25 @@ AB_simulatio,n.jlで実装する予定
   - $M_f^{n,o}=M_{f-1}^{n,o}+\Delta M_f^{n,o}$
 - $M^n=\sum_l M_h^{n,l}+\sum_o M_f^{n,o}$
 - $\Delta M^n=M^n-M_{-1}^n$
+- $\Delta H^n = NL_b^n - \sum_o p_{e-1}^o\Delta e_b^{o,n} + \Delta M^n - \Delta L^n$
+- $H^n = H_{-1}^n + \Delta H^n$
+- $NW_h^l=\sum_n M_h^{n,l}-\sum_n L_h^{l,n}+\sum_o E_h^{o,l}$
+- $NW_f^o=K^o+\sum_n M_f^{n,o}-\sum_n L_f^{o,n}-E^o$
+- $NW_b^n=-M^n+L^n+\sum_o E_b^{o,n}+H^n$
+- $NW_g=\sum_n H^n$
+- $D_E=-\sum_o E^o+\sum_o\sum_l E_h^{o,l}+\sum_o\sum_l E_b^{o,l}$
+- $D_F=\sum_l\sum_n F_h^{l,n}-\sum_n F^n$
+- $NW=\sum_l NW_h^l+\sum_o NW_f+\sum_n NW_b+NW_g$
 - 
 - 
-- ここからAB化の作業を再開する
-- $\Delta H = NL_b - p_{e-1}\Delta e_b + \Delta M - \Delta L$
-- $H = H_{-1} + \Delta H$
-- $NW_h=M_h-L_h+E_h$
-- $NW_f=K+M_f-L_f-E$
-- $NW_b=-M+L+E_b+H$
-- $NW_g=H$
-- $D=-E+E_h+E_b$
-- $NW=NW_h+NW_f+NW_b+NW_g$
 - 倒産と新規参入のアルゴリズムも追加する必要がある
+- 倒産
+  - 純金融資産が0以下になると倒産する
+  - 
 
 隠された恒等式として
 
-- $K+D-NW=0$
-- $NL_h+NL_f+NL_b+NL_g=0$
-- $\Delta L=\Delta L_h+\Delta L_f$
-- $\Delta M=\Delta M_h+\Delta M_f$
-- $NL_g+\Delta H=0$
+- 
 
 を使ってモデルの会計的一貫性を確認する
 
@@ -145,4 +144,5 @@ AB_simulatio,n.jlで実装する予定
 - 銀行への資本規制の追加
 - 金利の内生化
 - 預金/借入金の多対多化
+- 貸し渋り、貸し剥がしのような与信行動を追加する
 - など
