@@ -28,6 +28,7 @@ G_calc_item, G_potential = ones(N), ones(N)
 Cgrs = zeros(O)
 
 function G_func(t)
+    global G
     Gsum = G0*(1+β1)^(t-1)
     G_calc_item .*= 1.0 .+ β2.*(-1.0 .+ β3*randn(N))
     G_calc_item = max.(1.0, G_calc_item)
@@ -36,6 +37,7 @@ function G_func(t)
 end
 
 function c_func(t)
+    global c
     trans_or_stay = rand(O) .< α3*(p[:,t].-mean(p[:,t]))/p[:,t]
     r = zeros(O)
     r[1] = sum(c[:,l,t-1])+α4*sum(c[:,:,t-1])
@@ -60,22 +62,26 @@ function c_func(t)
 end
 
 function w_and_W_func(t)
+    global w, W, EMP
     for l=1:L
-        if EMP[l,t-1] > 0
-            if rand() < ζ3
+        if EMP[l,t-1] > 0 # 前期就業していた人
+            if rand() < ζ3 # 今期失業していた場合
                 continue
-            else
+            else # 今期も同じ企業で就業する場合
                 EMP[l,t] = EMP[l,t-1]
                 w[l,t] = (1-ζ1)*w[l,t-1]+ζ1*w[l,t-1]*(1+ζ2*abs(randn()))
                 W[l,EMP[l,t],t] = w[l,t]
             end
-        else
+        else # 前期失業していた人
+            # 求人数を作る
             offers = [Int64(max(0, (u[o,t-1]*k[o,t-1]-A[o,t]*sum(w[:,o,t-1]>0))/A[o,t])) for o=1:O]
+            # 応募確率を作る
             prob = deepcopy(offers)
             for o=2:O
                 prob[o,t] += prob[o,t-1]
             end
             prob /= prob[end]
+            # 応募先を割り振る
             appli = [[] for _ = 1:O]
             for l=1:L
                 if EMP[l,t-1] == 0
@@ -83,6 +89,7 @@ function w_and_W_func(t)
                     push!(appli[o], l)
                 end
             end
+            # マッチング
             for o=1:O
                 if offers[o] > 0 & length(appli[o]) > 0
                     much = collect(Set(sample(appli[o], offers[o])))
@@ -96,6 +103,19 @@ function w_and_W_func(t)
             end
         end
     end
+    # 従業員が0にならないように対策
+    s = Set(EMP[:,t])
+    UE = findall(x -> x == 0, EMP[:,t])
+    for o=1:O
+        if !(o in s)
+            l = sample(UE)
+            setdiff!(UE, [l])
+            EMP[l,t] = o
+            w[l,t] = (1-ζ1)*w[l,t-1]+ζ1*w[l,t-1]*(1+ζ2*abs(randn()))
+            W[l,EMP[l,t],t] = w[l,t]
+        end
+    end
+    # 失業者の要求賃金を下げる
     for l=1:L
         if EMP[l,t]==0
             w[l,t] = (1-ζ1)*w[l,t-1]+ζ1*w[l,t-1]*(1-ζ3*abs(randn()))
@@ -104,6 +124,7 @@ function w_and_W_func(t)
 end
 
 function Lh_func(t)
+    global Lh
     Lhs = ϵ1*NLh[:,t] + ϵ2*sum(C[:,:,t], dims=1)
     for l=1:L
         for n=1:N
@@ -116,6 +137,7 @@ function Lh_func(t)
 end
 
 function ΔLf_and_Lf_func(t)
+    global ΔLf, Lf
     ΔLfs = max.(-sum(Lf[:,:,t-1], dims=2), (λ3+λ4*((P[:,t]-Pf[:,t])./(sum(Eh[:,:,t-1], dims=2)+sum(Eb[:,:,t-1], dims=2))-rL)).*(I[:,t]+sum(W[:,:,t], dims=1)+Tv[:,t]+Tc[:,t]+rL*sum(Lf[:,:,t-1], dims=2)-ϕ*sum(Mf[:,:,t-1], dims=1)))
     for o=1:O
         for n=1:N
@@ -140,6 +162,7 @@ function ΔLf_and_Lf_func(t)
 end
 
 function household_portfolio_func(t)
+    global Eh, Fh
     # 金融資産額の推定
     Vs = sum(Mh[:,:,t-1], dims=1)+sum(Eh[:,:,t-1], dims=1)+sum(Fh[:,:,t-1], dims=1)+NLh[:,t]
     # ポートフォリオ配分先の確率の重みの共通部分を計算
@@ -174,7 +197,8 @@ function household_portfolio_func(t)
     end
 end
 
-function bank_portfolio(t)
+function Eb_func(t)
+    global Eb
     # 企業の株の保有額の見積もり
     Vs = sum(Eb[:,:,t-1], dims=1)+NLh[:,t]
     # ポートフォリオ配分先の確率の重みの共通部分を計算
@@ -194,6 +218,7 @@ function bank_portfolio(t)
 end
 
 function ΔMh_and_Mh_func(t)
+    global ΔMh, Mh
     change = rand(L) < ξ1
     prob = max.(zeros(N), NWb[:,t-1])
     prob /= sum(prob)
@@ -219,6 +244,7 @@ function ΔMh_and_Mh_func(t)
 end
 
 function ΔMf_and_Mf_func(t)
+    global ΔMf, Mf
     change = rand(O) < ξ2
     prob = max.(zeros(N), NWb[:,t-1])
     prob /= sum(prob)
@@ -243,7 +269,46 @@ function ΔMf_and_Mf_func(t)
     end
 end
 
+function insolvency_disposition(t)
+    global k, K, dis_k, dis_K
+    global Mf, M, ΔMf, ΔM, dis_Mf, dis_ΔMf
+    dis_lst, srv_lst = [], []
+    for o=1:O
+        if sum(Mf[:,o,t])<ϕ2*sum(Lf[o,:,t])
+            push!(dis_lst, o)
+        else
+            push!(srv_lst, o)
+        end
+    end
+    for o in dis_lst
+        for n=1:N
+            M[n,t] -= Mf[n,o,t]
+            ΔM[n,t] -= ΔMf[n,o,t]
+        end
+    end
+    
+    k, K = k[srv_lst, :], K[srv_lst, :]
+    Mf, ΔMf = Mf[srv_lst, :], ΔMf[srv_lst, :]
+    dis_k, dis_K = cat(dis_k,k[dis_lst,:],dims=1), cat(dis_K,K[dis_lst,:],dims=1)
+    dis_Mf, dis_ΔMf = cat(dis_Mf,Mf[:,dis_lst,:],dims=2), cat(dis_ΔMf,ΔMf[:,dis_lst,:],dims=2)
+
+    return new_
+end
+
 function one_season(TIMERANGE)
+    global p, pe, pf
+    global Ti, Ta, Tv, Tc, w, W
+    global g, G, c, C, i, I
+    global k, K
+    global P, Ph, Pf, Pb, S
+    global A, u, DE, DF
+    global NLh, NLf, NLb, NLg
+    global Lh, Lf, L, ΔLh, ΔLf, ΔL
+    global Mh, Mf, M, ΔMh, ΔMf, ΔM
+    global eh, eb, e, Δeh, Δeb, Δe, Eh, Eb, E
+    global fh, f, Δfh, Δf, Fh, F
+    global H, ΔH
+    global NWh, NWf, NWb, NWg, NW
     for t=TIMERANGE
         p[:,t] = λp*(1+ν1+ν2*sum(Lf[:,:,t-1], dims=2)./(sum(C[:,:,t-1], dims=2)+G[:,t-1])).*(sum(W[:,:,t-1], dims=1)+Tv[:,t-1]+Tc[:,t-1]+δ*k[:,t-1])./(uT*γ1*k[:,t-1])+(1-λp)*ν3*(p[:,t-1].-mean(p[:,t-1]))
         Ti[:,t] = τ1*(W[:,o,t-1]+P[:,o,t-1]+S[:,n,t-1])
@@ -285,7 +350,7 @@ function one_season(TIMERANGE)
         E[:,t] = E[:,t-1] + pe[:,t-1].*Δe[:,t]
         e[:,t] = e[:t-1] + Δe[:,t]
         household_portfolio_func(t)
-        bank_portfolio(t)
+        Eb_func(t)
         pe[:,t] = (sum(Eh[:,:,t], dims=2)+sum(Eb[:,:,t], dims=2))./e[:,t]
         for l=1:L
             eh[:,l,t] = Eh[:,l,t]./pe[:,t]
