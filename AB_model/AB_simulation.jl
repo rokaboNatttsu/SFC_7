@@ -24,8 +24,8 @@ rL = 0.02
 G0 = 1.0*O
 
 EMP = zeros(Int64, L,TIME)
-G_calc_item, G_potential = ones(N), ones(N)
-Cgrs = zeros(O)
+G_calc_item, G_potential = ones(O), ones(O)
+os =[o for o=1:O]
 
 function G_func(t)
     global G
@@ -33,20 +33,25 @@ function G_func(t)
     G_calc_item .*= 1.0 .+ β2.*(-1.0 .+ β3*randn(N))
     G_calc_item = max.(1.0, G_calc_item)
     G_potential = max.(0.0, G_calc_item .- 2.0)
-    G[:,t] = G_potential.*Gsum/sum(G_potential)
+    G[os,t] = G_potential.*Gsum/sum(G_potential)
 end
 
 function c_func(t)
+    # Eb_funcのように、先に購入確率を作って、それから購入先を選ぶ形に変える
     global c
-    trans_or_stay = rand(O) .< α3*(p[:,t].-mean(p[:,t]))/p[:,t]
+    trans_or_stay = rand(O) .< α3*(p[os,t].-mean(p[os,t]))/p[os,t]
     r = zeros(O)
-    r[1] = sum(c[:,l,t-1])+α4*sum(c[:,:,t-1])
-    for o=2:O
-        r[o] = sum(c[:,l,t-1]) + α4*sum(c[:,:,t-1]) + r[o-1]
+    for (q, o) in enumerate(os)
+        if q==1
+            r[1] = sum(c[1,:,t-1])+α4*(sum(c[os,:,t-1])+sum(g[os,t-1]))
+        else
+            r[o] = sum(c[o,:,t-1])+α4*(sum(c[os,:,t-1])+sum(g[os,t-1])) + r[o-1]
+        end
     end
     r /= r[end]
-    Cs = α1*(sum(W[:,:,t-1], dims=1)-Ta[:,t]-Ti[:,t]-rL*sum(Lh[:,:,t-1], dims=2)+sum(Ph[:,:,t-1], dims=1)+sum(S[:,:,t-1], dims=1))+α2*(sum(Eh[:,:,t-1], dims=1)+sum(Mh[:,:,t-1], dims=1)-sum(Lh[:,:,t-1], dims=1))
-    for (o, trans) in enumerate(trans_or_stay)
+    Cs = α1*(sum(W[:,os,t-1], dims=1)-Ta[:,t]-Ti[:,t]-rL*sum(Lh[os,:,t-1], dims=2)+sum(Ph[:,os,t-1], dims=1)+sum(S[:,:,t-1], dims=1))+α2*(sum(Eh[:,:,t-1], dims=1)+sum(Mh[:,:,t-1], dims=1)-sum(Lh[:,:,t-1], dims=1))
+    for (q, trans) in enumerate(trans_or_stay)
+        o = os[q]
         if ! trans
             for l=1:L
                 if c[o,l,t-1] > 0.0
@@ -55,7 +60,7 @@ function c_func(t)
                 end
             end
         else
-            new_o = searchsortedlast(r, rand())
+            new_o = os[searchsortedlast(r, rand())]
             c[new_o,l,t] = Cs[l]/p[new_o,t]
         end
     end
@@ -74,28 +79,32 @@ function w_and_W_func(t)
             end
         else # 前期失業していた人
             # 求人数を作る
-            offers = [Int64(max(0, (u[o,t-1]*k[o,t-1]-A[o,t]*sum(w[:,o,t-1]>0))/A[o,t])) for o=1:O]
+            offers = [Int64(max(0, (u[o,t-1]*k[o,t-1]-A[o,t]*sum(W[:,o,t-1]>0))/A[o,t])) for o in os]
             # 応募確率を作る
             prob = deepcopy(offers)
-            for o=2:O
-                prob[o,t] += prob[o,t-1]
+            for q in 1:O
+                if q==1
+                    continue
+                else
+                    prob[q] += prob[q-1]
+                end
             end
             prob /= prob[end]
             # 応募先を割り振る
             appli = [[] for _ = 1:O]
             for l=1:L
                 if EMP[l,t-1] == 0
-                    o = searchsortedlast(prob, rand())
-                    push!(appli[o], l)
+                    q = searchsortedlast(prob, rand())
+                    push!(appli[q], l)
                 end
             end
             # マッチング
-            for o=1:O
-                if offers[o] > 0 & length(appli[o]) > 0
-                    much = collect(Set(sample(appli[o], offers[o])))
+            for q=1:O
+                if offers[q] > 0 & length(appli[q]) > 0
+                    much = collect(Set(sample(appli[q], offers[q])))
                     for x=1:length(much)
                         l = much[x]
-                        EMP[l,t] = o
+                        EMP[l,t] = os[q]
                         w[l,t] = (1-ζ1)*w[l,t-1]+ζ1*w[l,t-1]*(1+ζ2*abs(randn()))
                         W[l,EMP[l,t],t] = w[l,t]
                     end
@@ -106,7 +115,7 @@ function w_and_W_func(t)
     # 従業員が0にならないように対策
     s = Set(EMP[:,t])
     UE = findall(x -> x == 0, EMP[:,t])
-    for o=1:O
+    for o in os
         if !(o in s)
             l = sample(UE)
             setdiff!(UE, [l])
@@ -125,7 +134,7 @@ end
 
 function Lh_func(t)
     global Lh
-    Lhs = ϵ1*NLh[:,t] + ϵ2*sum(C[:,:,t], dims=1)
+    Lhs = ϵ1*NLh[:,t] + ϵ2*sum(C[os,:,t], dims=1)
     for l=1:L
         for n=1:N
             if Mh[n,l,t-1] > 0.0
@@ -138,8 +147,8 @@ end
 
 function ΔLf_and_Lf_func(t)
     global ΔLf, Lf
-    ΔLfs = max.(-sum(Lf[:,:,t-1], dims=2), (λ3+λ4*((P[:,t]-Pf[:,t])./(sum(Eh[:,:,t-1], dims=2)+sum(Eb[:,:,t-1], dims=2))-rL)).*(I[:,t]+sum(W[:,:,t], dims=1)+Tv[:,t]+Tc[:,t]+rL*sum(Lf[:,:,t-1], dims=2)-ϕ*sum(Mf[:,:,t-1], dims=1)))
-    for o=1:O
+    ΔLfs = max.(-sum(Lf[os,:,t-1], dims=2), (λ3+λ4*((P[os,t]-Pf[os,t])./(sum(Eh[os,:,t-1], dims=2)+sum(Eb[os,:,t-1], dims=2))-rL)).*(I[os,t]+sum(W[:,os,t], dims=1)+Tv[os,t]+Tc[os,t]+rL*sum(Lf[os,:,t-1], dims=2)-ϕ*sum(Mf[:,os,t-1], dims=1)))
+    for o in os
         for n=1:N
             if Mf[n,o,t-1] > 0.0
                 if Lf[o,n,t-1] > 0.0
@@ -166,18 +175,18 @@ function household_portfolio_func(t)
     # 金融資産額の推定
     Vs = sum(Mh[:,:,t-1], dims=1)+sum(Eh[:,:,t-1], dims=1)+sum(Fh[:,:,t-1], dims=1)+NLh[:,t]
     # ポートフォリオ配分先の確率の重みの共通部分を計算
-    index = ψ1*(Pf[:,t] - I[:,t])+ψ2*(sum(Mf[:,:,t-1], dims=1)-sum(Lf[:,:,t-1], dims=2))+ψ3*(P[:,t]-Pf[:,t])./(sum(Eh[:,:,t-1], dims=2)+sum(Eb[:,:,t-1], dims=2))
-    append!(index, ψ1*(rL.*L[:,t-1]+sum(Pb[:,:,t], dims=2))+ψ3*sum(S[:,:,t], dims=1)./sum(Fh[:,:,t-1], dims=2))
+    index = ψ1*(Pf[os,t] - I[os,t])+ψ2*(sum(Mf[:,os,t-1], dims=1)-sum(Lf[os,:,t-1], dims=2))+ψ3*(P[os,t]-Pf[os,t])./(sum(Eh[os,:,t-1], dims=2)+sum(Eb[os,:,t-1], dims=2))
+    append!(index, ψ1*(rL.*L[:,t-1]+sum(Pb[:,os,t], dims=2))+ψ3*sum(S[:,:,t], dims=1)./sum(Fh[:,:,t-1], dims=2))
     index = max.(zeros(O), index)
     index /= sum(index)
     # ポートフォリオ配分先の数Int64(x[l])を決めるための準備。
-    x = 0.5*Vs./mean(sum(C[:,:,t], dims=1))
+    x = 0.5*Vs./mean(sum(C[os,:,t], dims=1))
     # 家計lのポートフォリオ計算
     for l=1:L
         # ポートフォリオ配分先に選ぶ確率の重み付けを決める
-        tmp = Eh[:,l,t-1]
+        tmp = Eh[os,l,t-1]
         append!(tmp, Fh[:,l,t-1])
-        prob = index + tmp/(sum(Eh[:,l,t-1])+sum(Fh[:,l,t-1]))
+        prob = index + tmp/(sum(Eh[os,l,t-1])+sum(Fh[:,l,t-1]))
         prob /= sum(prob)
         # ポートフォリオ配分先のリストを作る
         lst = sample(1:(O+N), Weights(prob), Int64(x[l]))
@@ -185,11 +194,11 @@ function household_portfolio_func(t)
             continue
         end
         # 収益率から、資産に占める株式の割合の目標を計算し、保有額を決める
-        EF_volume = Vs[l]*(λ1 + λ2*(sum(Ph[l,:,t])+sum(S[l,:,t]))/(sum(Eh[:,l,t-1])+sum(F[:,l,t-1])))
+        EF_volume = Vs[l]*(λ1 + λ2*(sum(Ph[l,os,t])+sum(S[l,:,t]))/(sum(Eh[os,l,t-1])+sum(F[:,l,t-1])))
         # EF_volume/length(lst)を単位としてlstの企業または銀行の株の保有割合を決める
         for on in lst
             if on <= O
-                Eh[on,l,t] += EF_volume/length(lst)
+                Eh[os[on],l,t] += EF_volume/length(lst)
             else
                 Fh[on-O,l,t] += EF_volume/length(lst)
             end
@@ -200,20 +209,20 @@ end
 function Eb_func(t)
     global Eb
     # 企業の株の保有額の見積もり
-    Vs = sum(Eb[:,:,t-1], dims=1)+NLh[:,t]
+    Vs = sum(Eb[os,:,t-1], dims=1)+NLb[:,t]
     # ポートフォリオ配分先の確率の重みの共通部分を計算
-    index = ψ1*(Pf[:,t] - I[:,t])+ψ2*(sum(Mf[:,:,t-1], dims=1)-sum(Lf[:,:,t-1], dims=2))+ψ3*(P[:,t]-Pf[:,t])./(sum(Eh[:,:,t-1], dims=2)+sum(Eb[:,:,t-1], dims=2))
-    index = exp.(index./(sum(Eh[:,:,t])+sum(Eb[:,:,t])))
+    index = ψ1*(Pf[os,t] - I[os,t])+ψ2*(sum(Mf[:,os,t-1], dims=1)-sum(Lf[os,:,t-1], dims=2))+ψ3*(P[os,t]-Pf[os,t])./(sum(Eh[os,:,t-1], dims=2)+sum(Eb[os,:,t-1], dims=2))
+    index = exp.(index./(sum(Eh[os,:,t])+sum(Eb[os,:,t])))
     index /= sum(index)
     # 銀行nのポートフォリオ計算
     for n=1:N
         # ポートフォリオ配分割合を決める
-        prob = index*abs.(1+0.1*randn(N)) + Eb[:,n,t-1]/(sum(Eb[:,n,t-1]))
+        prob = index*abs.(1+0.1*randn(N)) + Eb[os,n,t-1]/(sum(Eb[os,n,t-1]))
         prob /= sum(prob)
         # 収益率から、保有する株式の総額目標を計算
-        E_volume = Vs[n]*(1 + λ2*sum(Pb[n,:,t])/sum(Eb[:,n,t-1]))
+        E_volume = Vs[n]*(1 + λ2*sum(Pb[n,os,t])/sum(Eb[os,n,t-1]))
         # ポートフォリオ決定
-        Eb[:,n,t] = E_volume*prob
+        Eb[os,n,t] = E_volume*prob
     end
 end
 
@@ -223,7 +232,7 @@ function ΔMh_and_Mh_func(t)
     prob = max.(zeros(N), NWb[:,t-1])
     prob /= sum(prob)
     for l=1:L
-        ΔMh_sum = NLh[l,t]-sum(pe[:,t-1].*Δeh[:,l,t])+sum(ΔLh[l,:,t])
+        ΔMh_sum = NLh[l,t]-sum(pe[os,t-1].*Δeh[os,l,t])+sum(ΔLh[l,:,t])
         last_n = 0
         for n=1:N
             if Mh[n,l,t-1] > 0.0
@@ -249,7 +258,7 @@ function ΔMf_and_Mf_func(t)
     prob = max.(zeros(N), NWb[:,t-1])
     prob /= sum(prob)
     for o=1:O
-        ΔMf_sum = NLf[o,t]+sum(ΔLf[o,:,t])+sum(pe[:,t-1].*Δe[:,t])
+        ΔMf_sum = NLf[o,t]+sum(ΔLf[o,:,t])+sum(pe[os,t-1].*Δe[os,t])
         last_n = 0
         for n=1:N
             if Mf[n,o,t-1] > 0.0
@@ -270,29 +279,22 @@ function ΔMf_and_Mf_func(t)
 end
 
 function insolvency_disposition(t)
-    global k, K, dis_k, dis_K
-    global Mf, M, ΔMf, ΔM, dis_Mf, dis_ΔMf
-    dis_lst, srv_lst = [], []
-    for o=1:O
-        if sum(Mf[:,o,t])<ϕ2*sum(Lf[o,:,t])
-            push!(dis_lst, o)
-        else
-            push!(srv_lst, o)
-        end
-    end
-    for o in dis_lst
-        for n=1:N
-            M[n,t] -= Mf[n,o,t]
-            ΔM[n,t] -= ΔMf[n,o,t]
-        end
-    end
-    
-    k, K = k[srv_lst, :], K[srv_lst, :]
-    Mf, ΔMf = Mf[srv_lst, :], ΔMf[srv_lst, :]
-    dis_k, dis_K = cat(dis_k,k[dis_lst,:],dims=1), cat(dis_K,K[dis_lst,:],dims=1)
-    dis_Mf, dis_ΔMf = cat(dis_Mf,Mf[:,dis_lst,:],dims=2), cat(dis_ΔMf,ΔMf[:,dis_lst,:],dims=2)
+    global os, EMP, G_calc_item, G_potential, O
+    EMP = zeros(Int64, L,TIME)
 
-    return new_
+    q = 1
+    while length(os) >= q
+        o = os[q]
+        if sum(Mf[:,o,t])<ϕ2*sum(Lf[o,:,t])
+            setdiff!(os, o)
+            deleteat!(G_calc_item, q)
+            deleteat!(G_potential, q)
+            EMP[EMP==o, t] = 0
+            O -= 1
+        else
+            q += 1
+        end
+    end
 end
 
 function one_season(TIMERANGE)
@@ -310,70 +312,71 @@ function one_season(TIMERANGE)
     global H, ΔH
     global NWh, NWf, NWb, NWg, NW
     for t=TIMERANGE
-        p[:,t] = λp*(1+ν1+ν2*sum(Lf[:,:,t-1], dims=2)./(sum(C[:,:,t-1], dims=2)+G[:,t-1])).*(sum(W[:,:,t-1], dims=1)+Tv[:,t-1]+Tc[:,t-1]+δ*k[:,t-1])./(uT*γ1*k[:,t-1])+(1-λp)*ν3*(p[:,t-1].-mean(p[:,t-1]))
-        Ti[:,t] = τ1*(W[:,o,t-1]+P[:,o,t-1]+S[:,n,t-1])
+        p[os,t] = λp*(1+ν1+ν2*sum(Lf[os,:,t-1], dims=2)./(sum(C[os,:,t-1], dims=2)+G[os,t-1])).*(sum(W[:,os,t-1], dims=1)+Tv[os,t-1]+Tc[os,t-1]+δ*k[os,t-1])./(uT*γ1*k[os,t-1])+(1-λp)*ν3*(p[os,t-1].-mean(p[os,t-1]))
+        Ti[:,t] = τ1*(sum(W[:,:,t-1], dims=2)+sum(P[:,:,t-1], dims=2)+S[:,n,t-1])
         Ta[:,t] = τ2*(sum(Eh[:,:,t-1], dims=1)+sum(Mh[:,:,t-1], dims=1)-sum(Lh[:,:,t-1], dims=2))
         Tv[:,t] = τ3*(sum(C[:,:,t-1], dims=2)+I[:,t-1]+G[:,t-1])
         Tc[:,t] = τ4*(sum(C[:,:,t-1], dims=2)+G[:,t-1]+I[:,t-1]-sum(W[:,:,t-1], dims=1)-Tv[:,t-1])
         G_func(t)
-        g[:,t] = G[:,t]./p[:,t]
+        g[os,t] = G[os,t]./p[os,t]
         c_func(t)
-        for o=1:O
+        for o in os
             C[o,:,t] = p[o,t]*c[o,:,t]
         end
-        A[:,t] = A[:,t-1]*(1+μ1.+μ2*i[:,t-1]./k[:,t-1])
-        u[:,t] = (sum(c[:,:,t], dims=2)+i[:,t]+g[:,t])./(γ1*k[:,t-1])
-        i[:,t] = δ*k[:,t-1]+(u[:,t-1]-uT).*γ2.*k[:,t-1]+γ3*(sum(Mf[:,:,t-1], dims=1)-sum(Lf[:,:,t-1], dims=2))./p[:,t-1]
-        I[:,t] = p[:,t].*i[:,t]
-        k[:,t] = (1-δ).*k[:,t-1]+i[:,t]
-        K[:,t] = p[:,t].*k[:,t]
+        A[os,t] = A[os,t-1]*(1+μ1.+μ2*i[os,t-1]./k[os,t-1])
+        u[os,t] = (sum(c[os,:,t], dims=2)+i[os,t]+g[os,t])./(γ1*k[os,t-1])
+        i[os,t] = δ*k[os,t-1]+(u[os,t-1]-uT).*γ2.*k[os,t-1]+γ3*(sum(Mf[:,os,t-1], dims=1)-sum(Lf[os,:,t-1], dims=2))./p[os,t-1]
+        I[os,t] = p[os,t].*i[os,t]
+        k[os,t] = (1-δ).*k[os,t-1]+i[os,t]
+        K[os,t] = p[os,t].*k[os,t]
         w_and_W_func(t)
-        P[:,t] = sum(C[:,:,t], dims=2)+G[:,t]+I[:,t]-sum(W[:,:,t], dims=1)-Tc[:,t]-Tv[:,t]-rL*sum(Lf[:,:,t-1], dims=2)
-        for o=1:O
+        P[os,t] = sum(C[os,:,t], dims=2)+G[os,t]+I[os,t]-sum(W[:,os,t], dims=1)-Tc[os,t]-Tv[os,t]-rL*sum(Lf[os,:,t-1], dims=2)
+        for o in os
             Ph[:,o,t] = max(0.0, θ1*(P[o,t]-I[o,t])+θ2*(sum(Mf[:,o,t-1])-sum(Lf[o,:,t-1]))).*eh[o,:,t]./e[o,t]
             Pb[:,o,t] = max(0.0, θ1*(P[o,t]-I[o,t])+θ2*(sum(Mf[:,o,t-1])-sum(Lf[o,:,t-1]))).*eb[o,:,t]./e[o,t]
         end
-        Pf[:,t] = P[:,t] - sum(Ph[:,:,t], dims=1) - sum(Pb[:,:,t], dims=1)
+        Pf[os,t] = P[os,t] - sum(Ph[:,os,t], dims=1) - sum(Pb[:,os,t], dims=1)
         for n=1:N
-            S[:,n,t] = (θ3*(rL*L[n,t-1]+sum(Pb[n,:,t]))+θ4*sum(Eb[:,n,t-1])).*fb[:,n,t-1]./f[n,t-1]
+            S[:,n,t] = (θ3*(rL*L[n,t-1]+sum(Pb[n,os,t]))+θ4*sum(Eb[os,n,t-1])).*fb[:,n,t-1]./f[n,t-1]
         end
-        NLh[:,t] = -sum(C[:,:,t], dims=1) + sum(W[:,:,t], dims=2)-Ti[:,t]-Ta[:,t]-rL*sum(Lh[:,:,t-1], dims=2)+sum(Ph[:,:,t], dims=2)+sum(S[:,:,t], dims=2)
-        NLf[:,t] = -I[:,t] + Pf[:,t]
-        NLb[:,t] = rL*L[:,t-1] + sum(Pb[:,:,t], dims=1) - sum(S[:,:,t], dims=1)
-        NLg[t] = -sum(G[:,t])+sum(Ti[:,t])+sum(Ta[:,t])+sum(Tv[:,t])+sum(Tc[:,t])
+        NLh[:,t] = -sum(C[os,:,t], dims=1) + sum(W[:,os,t], dims=2)-Ti[:,t]-Ta[:,t]-rL*sum(Lh[:,:,t-1], dims=2)+sum(Ph[:,os,t], dims=2)+sum(S[:,:,t], dims=2)
+        NLf[os,t] = -I[os,t] + Pf[os,t]
+        NLb[:,t] = rL*L[:,t-1] + sum(Pb[:,os,t], dims=2) - sum(S[:,:,t], dims=1)
+        NLg[t] = -sum(G[:,t])+sum(Ti[:,t])+sum(Ta[:,t])+sum(Tv[os,t])+sum(Tc[os,t])
         Lh_func(t)
         ΔLh[:,:,t] = Lh[:,:,t] - Lh[:,:,t-1]
         ΔLf_and_Lf_func(t)
-        L[:,t] = sum(Lh[:,:,t], dims=1) + sum(Lf[:,:,t], dims=1)
+        L[:,t] = sum(Lh[:,:,t], dims=1) + sum(Lf[os,:,t], dims=1)
         ΔL[:,t] = L[:,t] - L[:t-1]
-        Δe[:,t] = 1/p[:,t-1]*(1-λ3-λ4*((P[:,t]-Pf[:,t])./(sum(Eh[:,:,t-1], dims=2)+sum(Eb[:,:,t-1], dims=2))-rL)).*(I[:,t]+sum(W[:,:,t], dims=1)+Tv[:,t]+Tc[:,t]+rL*sum(Lf[:,:,t-1], dims=2)-ϕ*sum(Mf[:,:,t-1], dims=1))
-        E[:,t] = E[:,t-1] + pe[:,t-1].*Δe[:,t]
-        e[:,t] = e[:t-1] + Δe[:,t]
+        Δe[os,t] = 1/p[os,t-1]*(1-λ3-λ4*((P[os,t]-Pf[os,t])./(sum(Eh[os,:,t-1], dims=2)+sum(Eb[os,:,t-1], dims=2))-rL)).*(I[os,t]+sum(W[:,os,t], dims=1)+Tv[os,t]+Tc[os,t]+rL*sum(Lf[os,:,t-1], dims=2)-ϕ*sum(Mf[:,os,t-1], dims=1))
+        E[os,t] = E[os,t-1] + pe[os,t-1].*Δe[os,t]
+        e[os,t] = e[os,t-1] + Δe[os,t]
         household_portfolio_func(t)
         Eb_func(t)
-        pe[:,t] = (sum(Eh[:,:,t], dims=2)+sum(Eb[:,:,t], dims=2))./e[:,t]
+        pe[os,t] = (sum(Eh[os,:,t], dims=2)+sum(Eb[os,:,t], dims=2))./e[os,t]
         for l=1:L
-            eh[:,l,t] = Eh[:,l,t]./pe[:,t]
+            eh[os,l,t] = Eh[os,l,t]./pe[os,t]
         end
         for n=1:N
-            eb[:,n,t] = Eb[:,n,t]./pe[:,t]
+            eb[os,n,t] = Eb[os,n,t]./pe[os,t]
         end
-        Δeh[:,:,t] = eh[:,:,t] - eh[:,:,t-1]
-        Δeb[:,:,t] = eb[:,:,t] - eb[:,:,t-1]
+        Δeh[os,:,t] = eh[os,:,t] - eh[os,:,t-1]
+        Δeb[os,:,t] = eb[os,:,t] - eb[os,:,t-1]
         ΔMh_and_Mh_func(t)
         ΔMf_and_Mf_func(t)
-        M[:,t] = sum(Mf[:,:,t], dims=2)+sum(Mf[:,:,t], dims=2)
+        M[:,t] = sum(Mh[:,:,t], dims=2)+sum(Mf[:,os,t], dims=2)
         ΔM[:,t] = M[:,t] - M[:,t-1]
-        ΔH[:,t] = NLb[:,t]-[sum(pe[:,t].*Δeb[:,n,t]) for n=1:N]+ΔM[:,t]-ΔL[:,t]
+        ΔH[:,t] = NLb[:,t]-[sum(pe[os,t].*Δeb[os,n,t]) for n=1:N]+ΔM[:,t]-ΔL[:,t]
         H[:,t] = H[:,t-1] + ΔH[:,t]
-        NWh[:,t] = sum(Mh[:,:,t], dims=1)-sum(Lh[:,:,t], dims=2)+sum(Eh[:,:,t], dims=1)
-        NWf[:,t] = K[:,t]+sum(Mf[:,:,t], dims=1)+sum(Lf[:,:,t], dims=2)-E[:,t]
-        NWb[:,t] = -M[:,t]+L[:,t]+sum(Eb[:,:,t], dims=1)+H[:,t]
+        NWh[:,t] = sum(Mh[:,:,t], dims=1)-sum(Lh[:,:,t], dims=2)+sum(Eh[os,:,t], dims=1)
+        NWf[os,t] = K[os,t]+sum(Mf[:,os,t], dims=1)+sum(Lf[os,:,t], dims=2)-E[os,t]
+        NWb[:,t] = -M[:,t]+L[:,t]+sum(Eb[os,:,t], dims=1)+H[:,t]
         NWg[t] = sum(H[:,t])
-        DE[t] = sum(E[:,t])+sum(Eh[:,:,t])+sum(Eb[:,:,t])
+        DE[t] = -sum(E[os,t])+sum(Eh[os,:,t])+sum(Eb[os,:,t])
         DF[t] = sum(Fh[:,:,t])-sum(F[:,t])
         # 倒産処理
-
+        insolvency_disposition(t)
         # 起業
+        
     end
 end
