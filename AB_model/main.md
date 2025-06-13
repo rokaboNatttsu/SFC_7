@@ -4,7 +4,7 @@
 
 
 
-AB_simulatio,n.jlで実装する予定
+AB_simulatio,n.jlで実装する
 
 # 1. エージェント番号
 |      | インデックス | 総数 |
@@ -16,11 +16,28 @@ AB_simulatio,n.jlで実装する予定
 変数の右上につけて、どのエージェントとどのエージェントの取引もしくは貸借関係なのかを区別する
 
 # 2. モデルの式とアルゴリズム
-- $p^o=\lambda_p \frac{(1+\nu_1+\nu_2\frac{\sum_n L_{f-1}^{o,n}}{\sum_l C_{-1}^{o,l}+ G_{-1}^o})(\sum_l W_{-1}^{l,o}+T_{v-1}^o+T_{c-1}^o+\delta k_{-1}^o)}{u^T\gamma_1 k_{-1}^o} + (1-\lambda_p)\nu_3(p_{-1}^o-\overline{p}_{-1})$
+- $p^o=\lambda_p \frac{(1+\nu_1)(\sum_l W_{-1}^{l,o}+T_{v-1}^o+T_{c-1}^o+\delta k_{-1}^o)}{u^T\gamma_1 k_{-1}^o} + (1-\lambda_p)\nu_3(\overline{p}_{-1}-p_{-1}^o)$
   - マークアップ率は価格競争と投資資金回収率を主な引数とする関数で書かれるのでは？
-  - 価格競争の成分は？ $\overline{p}_{-1}=\frac{\sum_o(\sum_l C^{o,l}_{-1}+G_{-1}^o)}{\sum_o(\sum_l c^{o,l}_{-1}+g_{-1}^o)}$ に近づくように $\nu_3(p_{-1}^o-\overline{p}_{-1})$ の項を追加する？
   - 収穫逓増の効果を入れるべき？入れるとしたらどうやって？
-  - $\lambda_p$を適応ラメータにして、消費者が価格差に対しする商品の乗り換え速度に適応するようにしたほうが良いかも
+- 就業・失業判定、賃金率と賃金の決定のアルゴリズム
+  - $EMP^l$ は失業時に0，就業時にoを値に持つ
+  - if $\sum_o EMP_{-1}^{l}>0$
+    - if $rand() < \zeta_3$
+      - $EMP^{l}=0$
+      - $w^l=w_{-1}^l[1 - \zeta_3 abs\{randn()\}]$
+      - $W^{l,o} = v_{-1}^o w_{-1}^l$
+    - else
+      - $EMP^{l}=o=EMP_{-1}^{l}$
+      - $w^l=w_{-1}^l[1 + \zeta_2 abs\{randn()\}]$
+      - $W^{l,o} = v_{-1}^o w_{-1}^l$
+  - else
+    - 企業が Int64($\max[0, \frac{1}{A^o}\{u_{-1}^o k_{-1}^o-A_{-1}^o \sum_l (W_{-1}^{l,o}>0)\}]$) 人の求人を出す
+    - 求人数に比例する確率で失業者は応募する。応募の中から定員までランダムに雇用する
+    - $o'$で雇用が決まった場合
+      - $w^l=w_{-1}^l[1 + \zeta_2 abs\{randn()\}]$
+      - $EMP^{l}=o'$
+    - 失業が続く場合
+      - $w^l=w_{-1}^l[1 - \zeta_3 abs\{randn()\}]$
 - $T_i^l=\tau_1 \sum_l (W_{-1}^{l,o}+P_{h-1}^{l,o}+S_{-1}^{l,n})$
 - $T_a^l=\tau_2(\sum_o E_{h-1}^{o,l}+\sum_n M_{h-1}^{n,l}-\sum_n L_{h-1}^{l,n})$
 - $T_v^o=\tau_3(\sum_l C_{-1}^{o,l}+I_{-1}^o+G_{-1}^o)$
@@ -45,30 +62,10 @@ AB_simulatio,n.jlで実装する予定
 - $A^o=A_{-1}^o(1 + \mu_1 + \mu_2 \frac{i_{-1}^o}{k_{-1}^o})$
   - 技術水準上昇率が投資の一次関数として決まる。
 - $u^o = \frac{\sum_l c^{o,l}+i^o+g^o}{\gamma_1 k_{-1}^o}$
-- $i^o=\delta k_{-1}^o + (u_{-1}^o-u^T)\gamma_2 k_{-1}^o + \gamma_3\frac{\sum_n M_{f-1}^{n,o}-\sum_n L_{f-1}^{o,n}}{p^o}$
+- $i^o=\max\{0, \delta k_{-1}^o + (u_{-1}^o-u^T)\gamma_2 k_{-1}^o + \gamma_3\frac{\sum_n M_{f-1}^{n,o}-\sum_n L_{f-1}^{o,n}}{p^o}\}$
 - $I^o=p^o i^o$
 - $k^o=(1-\delta)k_{-1}^o+i^o$
 - $K^o=p^o k^o$
-- 就業・失業判定アルゴリズム　外部にファイルを作る
-- $EMP^l$ は失業時に0，就業時にoを値に持つ
-  - if $\sum_o EMP_{-1}^{l}>0$
-    - if $rand() < \zeta_3$
-      - $EMP^{l}=0$
-      - 失業者への社会保障をモデル含めることを検討
-      - $w^l=(1-\zeta_1)w_{-1}^l + \zeta_1 w_{-1}^l[1 - \zeta_3 abs\{randn()\}]$
-    - else
-      - $EMP^{l}=EMP_{-1}^{l}$
-      - $w^l=(1-\zeta_1)w_{-1}^l + \zeta_1 w_{-1}[1 + \zeta_2 abs\{randn()\}]$
-      - $W^{l,EMP^l} = w^l$
-  - else
-    - 企業が Int64($\max[0, \frac{1}{A^o}\{u_{-1}^o k_{-1}^o-A^o \sum_l (w_{-1}^{l,o}>0)\}]$) 人の求人を出す
-    - 求人数に比例する確率で失業者は応募する。応募の中から定員までランダムに雇用する
-    - $o'$で雇用が決まった場合
-      - $w^l=(1-\zeta_1)w_{-1}^l + \zeta_1 w_{-1}^l[1 + \zeta_2 abs\{randn()\}]$
-      - $EMP^{l}=o'$
-      - $W^{l,EMP^l} = w^l$
-    - 失業が続く場合
-      - $w^l=(1-\zeta_1)w_{-1}^l + \zeta_1 w_{-1}^l[1 - \zeta_3 abs\{randn()\}]$
 - $P^o=\sum_l C^{o,l}+G^o+I^o-\sum_l W^{l,o}-T_c^o-T_v^o-r_L \sum_n L_{f-1}^{o,n}$
 - $P_h^{l,o}=\max\{0, \theta_1(P^o-I^o)+\theta_2(\sum_n M_{f-1}^{o,n}-\sum_n L_{f-1}^{o,n})\}\frac{e_{h-1}^{o,l}}{e_{-1}^o}$
 - $P_b^{n,o}=\max\{0, \theta_1(P^o-I^o)+\theta_2(\sum_n M_{f-1}^{o,n}-\sum_n L_{f-1}^{o,n})\}\frac{e_{b-1}^{o,n}}{e_{-1}^o}$
@@ -124,7 +121,7 @@ AB_simulatio,n.jlで実装する予定
 - $D_E=-\sum_o E^o+\sum_o\sum_l E_h^{o,l}+\sum_o\sum_l E_b^{o,l}$
 - $D_F=\sum_l\sum_n F_h^{l,n}-\sum_n F^n$
 - $NW=\sum_l NW_h^l+\sum_o NW_f+\sum_n NW_b+NW_g$
-- 
+- $v^o=\frac{u^o k^o}{A^o \sum_l (W^{l,o}>0)}$
 - 
 - 倒産と新規参入のアルゴリズムも追加する必要がある
 - 倒産
@@ -145,4 +142,5 @@ AB_simulatio,n.jlで実装する予定
 - 金利の内生化
 - 預金/借入金の多対多化
 - 貸し渋り、貸し剥がしのような与信行動を追加する
+- 失業者への社会保障をモデル含める
 - など

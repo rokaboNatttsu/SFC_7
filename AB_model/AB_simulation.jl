@@ -1,24 +1,25 @@
 using StatsPlots
 using StatsBase
 
-L, O, N, TIME = 10000, 100, 10, 100
+L, O, N, TIME,  = 10000, 100, 10, 100
+OBuffer = 10000
 
-C, c, G, g, I. i = zeros(O, L, TIME), zeros(O, L, TIME), zeros(O, TIME), zeros(O, TIME), zeros(O, TIME), zeros(O, TIME)
-W, Ti, Ta, Tv, Tc = zeros(L, O, TIME), zeros(L, TIME), zeros(L, TIME), zeros(O, TIME), zeros(O, TIME)
-Ph, P, Pf, Pb = zeros(L, O, TIME), zeros(O, TIME), zeros(O, TIME), zeros(N, O, TIME)
+C, c, G, g, I. i = zeros(OBuffer, L, TIME), zeros(OBuffer, L, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME)
+W, Ti, Ta, Tv, Tc = zeros(L, OBuffer, TIME), zeros(L, TIME), zeros(L, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME)
+Ph, P, Pf, Pb = zeros(L, OBuffer, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME), zeros(N, OBuffer, TIME)
 S = zeros(L, N, TIME)
-NLh, NLf, NLb, NLg = zeros(L, TIME), zeros(O, TIME), zeros(N, TIME), zeros(TIME)
-p, pe, pf = zeros(O, TIME), zeros(O, TIME), zeros(N, TIME)
-eh, e, eb, Δeh, Δe, Δeb = zeros(O, L, TIME), zeros(O, TIME), zeros(O, N, TIME), zeros(O, L, TIME), zeros(O, TIME), zeros(O, N, TIME)
-Eh, E, Eb = zeros(O, L, TIME), zeros(O, TIME), zeros(O, N, TIME)
+NLh, NLf, NLb, NLg = zeros(L, TIME), zeros(OBuffer, TIME), zeros(N, TIME), zeros(TIME)
+p, pe, pf = zeros(OBuffer, TIME), zeros(OBuffer, TIME), zeros(N, TIME)
+eh, e, eb, Δeh, Δe, Δeb = zeros(OBuffer, L, TIME), zeros(OBuffer, TIME), zeros(OBuffer, N, TIME), zeros(OBuffer, L, TIME), zeros(OBuffer, TIME), zeros(OBuffer, N, TIME)
+Eh, E, Eb = zeros(OBuffer, L, TIME), zeros(OBuffer, TIME), zeros(OBuffer, N, TIME)
 fh, Δfh = zeros(N, L, TIME), zeros(N, L, TIME)
 Fh = zeros(N, L, TIME)
-Mh, Mf, M, ΔMh, ΔMf, ΔM = zeros(N, L, TIME), zeros(N, O, TIME), zeros(N, TIME), zeros(N, L, TIME), zeros(N, O, TIME), zeros(N, TIME)
-Lh, Lf, L, ΔLh, ΔLf, ΔL = zeros(L, N, TIME), zeros(O, N, TIME), zeros(N, TIME), zeros(L, N, TIME), zeros(O, N, TIME), zeros(N, TIME)
+Mh, Mf, M, ΔMh, ΔMf, ΔM = zeros(N, L, TIME), zeros(N, OBuffer, TIME), zeros(N, TIME), zeros(N, L, TIME), zeros(N, OBuffer, TIME), zeros(N, TIME)
+Lh, Lf, L, ΔLh, ΔLf, ΔL = zeros(L, N, TIME), zeros(OBuffer, N, TIME), zeros(N, TIME), zeros(L, N, TIME), zeros(OBuffer, N, TIME), zeros(N, TIME)
 H, ΔH = zeros(N, TIME), zeros(N, TIME)
-K, k = zeros(O, TIME), zeros(O, TIME)
+K, k = zeros(OBuffer, TIME), zeros(OBuffer, TIME)
 DE, DF = zeros(TIME), zeros(TIME)
-NWh, NWf, NWb, NWg, NWg = zeros(L, TIME), zeros(O, TIME), zeros(N, TIME), zeros(TIME), zeros(TIME)
+NWh, NWf, NWb, NWg, NWg = zeros(L, TIME), zeros(OBuffer, TIME), zeros(N, TIME), zeros(TIME), zeros(TIME)
 
 rL = 0.02
 G0 = 1.0*O
@@ -37,9 +38,8 @@ function G_func(t)
 end
 
 function c_func(t)
-    # Eb_funcのように、先に購入確率を作って、それから購入先を選ぶ形に変える
     global c
-    trans_or_stay = rand(O) .< α3*(p[os,t].-mean(p[os,t]))/p[os,t]
+    # 消費先を変える場合どこに変えるか、の確率を決める
     r = zeros(O)
     for (q, o) in enumerate(os)
         if q==1
@@ -49,37 +49,53 @@ function c_func(t)
         end
     end
     r /= r[end]
+    # 消費額を計算
     Cs = α1*(sum(W[:,os,t-1], dims=1)-Ta[:,t]-Ti[:,t]-rL*sum(Lh[os,:,t-1], dims=2)+sum(Ph[:,os,t-1], dims=1)+sum(S[:,:,t-1], dims=1))+α2*(sum(Eh[:,:,t-1], dims=1)+sum(Mh[:,:,t-1], dims=1)-sum(Lh[:,:,t-1], dims=1))
-    for (q, trans) in enumerate(trans_or_stay)
-        o = os[q]
-        if ! trans
-            for l=1:L
-                if c[o,l,t-1] > 0.0
-                    c[o,l,t] = Cs[l]/p[o,t]
-                    break
-                end
-            end
-        else
+    # 消費先の企業を選ぶ
+    for l=1:L
+        # 前期の消費先の特定
+        last_o = findall(x -> x > 0.0, c[:,l,t-1])[1]
+        # 消費先変更するかどうかの決定
+        trans = rand() < α3*(p[last_o,t]-mean(p[os,t]))/p[os,t]
+        if !(last_o in os)
+            trans = true
+        end
+        # 消費先の選択
+        if trans # 変更する場合
             new_o = os[searchsortedlast(r, rand())]
             c[new_o,l,t] = Cs[l]/p[new_o,t]
+        else # 前回と同じ消費先を選ぶ場合
+            c[last_o,l,t] = Cs[l]/p[last_o,t]
         end
     end
 end
 
-function w_and_W_func(t)
-    global w, W, EMP
+function v_calc(t)
+    global v
+    for o in os
+        v[o,t] = (u[o,t]*k[o,t])./(A[o,t]*sum(W[:,o,t].>0))
+    end
+end
+
+function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
+    global w, W, EMP, v
+    flotations_ls = [info[o,2] for info in flotation_info]
+    flotations_os = [info[o,3] for info in flotation_info]
     for l=1:L
         if EMP[l,t-1] > 0 # 前期就業していた人
             if rand() < ζ3 # 今期失業していた場合
-                continue
+                W[l,EMP[l,t],t] = v[EMP[l,t-1]]*w[l,t-1]
             else # 今期も同じ企業で就業する場合
                 EMP[l,t] = EMP[l,t-1]
-                w[l,t] = (1-ζ1)*w[l,t-1]+ζ1*w[l,t-1]*(1+ζ2*abs(randn()))
-                W[l,EMP[l,t],t] = w[l,t]
+                w[l,t] = w[l,t-1]*(1+ζ2*abs(randn()))
+                W[l,EMP[l,t],t] = v[EMP[l,t-1]]*w[l,t-1]
             end
+        elseif (x,l) in enumerate(flotations_ls) # 起業メンバー
+            EMP[l,t] = flotations_os[x]
+            w[l,t] = w[l,t-1]*(1+ζ2*abs(randn()))
         else # 前期失業していた人
             # 求人数を作る
-            offers = [Int64(max(0, (u[o,t-1]*k[o,t-1]-A[o,t]*sum(W[:,o,t-1]>0))/A[o,t])) for o in os]
+            offers = [Int64(max(0, (u[o,t-1]*k[o,t-1]-A[o,t]*sum(W[:,o,t-1]>0))/A[o,t-1])) for o in os]
             # 応募確率を作る
             prob = deepcopy(offers)
             for q in 1:O
@@ -105,8 +121,7 @@ function w_and_W_func(t)
                     for x=1:length(much)
                         l = much[x]
                         EMP[l,t] = os[q]
-                        w[l,t] = (1-ζ1)*w[l,t-1]+ζ1*w[l,t-1]*(1+ζ2*abs(randn()))
-                        W[l,EMP[l,t],t] = w[l,t]
+                        w[l,t] = w[l,t-1]*(1+ζ2*abs(randn()))
                     end
                 end
             end
@@ -120,14 +135,16 @@ function w_and_W_func(t)
             l = sample(UE)
             setdiff!(UE, [l])
             EMP[l,t] = o
-            w[l,t] = (1-ζ1)*w[l,t-1]+ζ1*w[l,t-1]*(1+ζ2*abs(randn()))
-            W[l,EMP[l,t],t] = w[l,t]
+            w[l,t] = w[l,t-1]*(1+ζ2*abs(randn()))
+            if EMP[l,t-1] > 0
+                W[l,EMP[l,t],t] = v[EMP[l,t-1]]*w[l,t-1]
+            end
         end
     end
-    # 失業者の要求賃金を下げる
+    # 失業者の要求賃金率を下げる
     for l=1:L
         if EMP[l,t]==0
-            w[l,t] = (1-ζ1)*w[l,t-1]+ζ1*w[l,t-1]*(1-ζ3*abs(randn()))
+            w[l,t] = w[l,t-1]*(1-ζ3*abs(randn()))
         end
     end
 end
@@ -211,7 +228,10 @@ function Eb_func(t)
     # 企業の株の保有額の見積もり
     Vs = sum(Eb[os,:,t-1], dims=1)+NLb[:,t]
     # ポートフォリオ配分先の確率の重みの共通部分を計算
-    index = ψ1*(Pf[os,t] - I[os,t])+ψ2*(sum(Mf[:,os,t-1], dims=1)-sum(Lf[os,:,t-1], dims=2))+ψ3*(P[os,t]-Pf[os,t])./(sum(Eh[os,:,t-1], dims=2)+sum(Eb[os,:,t-1], dims=2))
+    index = ψ1*(Pf[os,t] - I[os,t])\
+            +ψ2*(sum(Mf[:,os,t-1], dims=1)-sum(Lf[os,:,t-1], dims=2))\
+            +ψ3*(P[os,t]-Pf[os,t])./(sum(Eh[os,:,t-1], dims=2)+sum(Eb[os,:,t-1], dims=2))\
+            +ψ4*(sum(Eh[os,:,t-1], dims=2)+sum(Eb[os,:,t-1], dims=2))/(sum(Eh[os,:,t-1])+sum(Eb[os,:,t-1]))
     index = exp.(index./(sum(Eh[os,:,t])+sum(Eb[os,:,t])))
     index /= sum(index)
     # 銀行nのポートフォリオ計算
@@ -297,6 +317,67 @@ function insolvency_disposition(t)
     end
 end
 
+function flotation(t) # 起業
+    global os, G_calc_item, G_potential, O
+    global Mh, M, 
+    next_o = 1
+    for q=1:size(k)[1]
+        if sum(k[q,:]) == 0.0
+            next_o = q
+            break
+        end
+    end
+    prob = max.(0.0, NWh[:, t-1])
+    prob /= sum(prob)
+    capitalists_ls = sample(1:L, Weights(prob), Oin, replace=false)
+    workers_ls = sample(findall(x -> x == 0, EMP[:,t-1]), Oin, replace=false)
+    for (x, o) in enumerate(next_o:next_o+Oin-1)
+        work_l = workers_ls[x]
+        cap_l = capitalists_ls[x]
+
+        # 企業情報リストに追加
+        push!(floations_info, [cap_l, work_l, o])
+        
+        # 生存企業のリストにIDを追加
+        push!(os, o)
+
+        # 必要なストックの初期状態の定義
+        for n=1:N
+            cap_Mf = 0.0
+            if Mh[n,cap_l,t-1] > 0.0
+                # 企業の預金増加に伴う変化
+                cap_Mf = 0.5*Mh[n,cap_l,t-1]
+                Mh[n,cap_l,t-1] -= cap_Mf
+                Mf[n,o,t-1] += cap_Mf   # 資本家と企業が同じ銀行に口座を持つこととする
+                ΔMh[n,cap_l,t-1] -= cap_Mf
+                ΔMf[n,o,t-1] += cap_Mf
+                NWh[cap_l,t-1] -= cap_Mf
+                NWf[n,t-1] += cap_Mf
+                break
+            end
+        end
+        # 資本家が株を持つことに伴う変化
+        pe[o,t-1] = 1.0
+        e[o,t-1] = cap_Mf
+        Δe[o,t-1] = cap_Mf
+        eh[o,cap_l,t-1] = cap_Mf
+        Δeh[o,cap_l,t-1] = cap_Mf
+        E[o,t-1] = cap_Mf
+        Eh[o,cap_l,t-1] = cap_Mf
+        NWh[cap_l,t-1] -= cap_Mf
+        NWf[cap_l,t-1] += cap_Mf
+        # 企業が価格のつかない資本を持つことに伴う変化
+        k[o,t-1] = 1.0
+    end
+    # 政府支出受注額決定のための配列を更新
+    apend!(G_calc_item, [1.0 for _=1:Oin-1])
+    apend!(G_potential, [0.0 for _=1:Oin-1])
+    # 企業総数を更新
+    O += 1
+
+    return floations_info
+end
+
 function one_season(TIMERANGE)
     global p, pe, pf
     global Ti, Ta, Tv, Tc, w, W
@@ -312,7 +393,10 @@ function one_season(TIMERANGE)
     global H, ΔH
     global NWh, NWf, NWb, NWg, NW
     for t=TIMERANGE
-        p[os,t] = λp*(1+ν1+ν2*sum(Lf[os,:,t-1], dims=2)./(sum(C[os,:,t-1], dims=2)+G[os,t-1])).*(sum(W[:,os,t-1], dims=1)+Tv[os,t-1]+Tc[os,t-1]+δ*k[os,t-1])./(uT*γ1*k[os,t-1])+(1-λp)*ν3*(p[os,t-1].-mean(p[os,t-1]))
+        flotation_info = flotation(t)
+
+        p[os,t] = λp*(1+ν1).*(sum(W[:,os,t-1], dims=1)+Tv[os,t-1]+Tc[os,t-1]+δ*k[os,t-1])./(uT*γ1*k[os,t-1])+(1-λp)*ν3*(mean(p[os,t-1]).-p[os,t-1])
+        w_and_W_func(t, flotation_info)
         Ti[:,t] = τ1*(sum(W[:,:,t-1], dims=2)+sum(P[:,:,t-1], dims=2)+S[:,n,t-1])
         Ta[:,t] = τ2*(sum(Eh[:,:,t-1], dims=1)+sum(Mh[:,:,t-1], dims=1)-sum(Lh[:,:,t-1], dims=2))
         Tv[:,t] = τ3*(sum(C[:,:,t-1], dims=2)+I[:,t-1]+G[:,t-1])
@@ -325,15 +409,14 @@ function one_season(TIMERANGE)
         end
         A[os,t] = A[os,t-1]*(1+μ1.+μ2*i[os,t-1]./k[os,t-1])
         u[os,t] = (sum(c[os,:,t], dims=2)+i[os,t]+g[os,t])./(γ1*k[os,t-1])
-        i[os,t] = δ*k[os,t-1]+(u[os,t-1]-uT).*γ2.*k[os,t-1]+γ3*(sum(Mf[:,os,t-1], dims=1)-sum(Lf[os,:,t-1], dims=2))./p[os,t-1]
+        i[os,t] = max.(0.0, δ*k[os,t-1]+(u[os,t-1]-uT).*γ2.*k[os,t-1]+γ3*(sum(Mf[:,os,t-1], dims=1)-sum(Lf[os,:,t-1], dims=2))./p[os,t-1])
         I[os,t] = p[os,t].*i[os,t]
         k[os,t] = (1-δ).*k[os,t-1]+i[os,t]
         K[os,t] = p[os,t].*k[os,t]
-        w_and_W_func(t)
         P[os,t] = sum(C[os,:,t], dims=2)+G[os,t]+I[os,t]-sum(W[:,os,t], dims=1)-Tc[os,t]-Tv[os,t]-rL*sum(Lf[os,:,t-1], dims=2)
         for o in os
-            Ph[:,o,t] = max(0.0, θ1*(P[o,t]-I[o,t])+θ2*(sum(Mf[:,o,t-1])-sum(Lf[o,:,t-1]))).*eh[o,:,t]./e[o,t]
-            Pb[:,o,t] = max(0.0, θ1*(P[o,t]-I[o,t])+θ2*(sum(Mf[:,o,t-1])-sum(Lf[o,:,t-1]))).*eb[o,:,t]./e[o,t]
+            Ph[:,o,t] = max(0.0, θ1*(P[o,t]-I[o,t])+θ2*(sum(Mf[:,o,t-1])-sum(Lf[o,:,t-1]))).*eh[o,:,t-1]./e[o,t-1]
+            Pb[:,o,t] = max(0.0, θ1*(P[o,t]-I[o,t])+θ2*(sum(Mf[:,o,t-1])-sum(Lf[o,:,t-1]))).*eb[o,:,t-1]./e[o,t-1]
         end
         Pf[os,t] = P[os,t] - sum(Ph[:,os,t], dims=1) - sum(Pb[:,os,t], dims=1)
         for n=1:N
@@ -374,9 +457,9 @@ function one_season(TIMERANGE)
         NWg[t] = sum(H[:,t])
         DE[t] = -sum(E[os,t])+sum(Eh[os,:,t])+sum(Eb[os,:,t])
         DF[t] = sum(Fh[:,:,t])-sum(F[:,t])
-        # 倒産処理
-        insolvency_disposition(t)
-        # 起業
+        
+        v_calc(t)   # 労働稼働率の計算
+        insolvency_disposition(t)# 倒産処理
         
     end
 end
