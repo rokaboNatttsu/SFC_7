@@ -436,7 +436,7 @@ function one_season(TIMERANGE)
         e[os,t] = e[os,t-1] + Δe[os,t]
         household_portfolio_func(t)
 				# fhとfの計算をここに入れる
-				pf[:,t] = sum(Fh[:,:,t], dims=2)/f
+				pf[:,t] = sum(Fh[:,:,t], dims=2)./sum(fh[:,:,t], dims=2)
         Eb_func(t)
         pe[os,t] = (sum(Eh[os,:,t], dims=2)+sum(Eb[os,:,t], dims=2))./e[os,t]
         for l=1:L
