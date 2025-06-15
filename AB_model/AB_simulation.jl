@@ -194,7 +194,7 @@ function household_portfolio_func(t)
     # ポートフォリオ配分先の確率の重みの共通部分を計算
     index = ψ1*(Pf[os,t] - I[os,t])+ψ2*(sum(Mf[:,os,t-1], dims=1)-sum(Lf[os,:,t-1], dims=2))+ψ3*(P[os,t]-Pf[os,t])./(sum(Eh[os,:,t-1], dims=2)+sum(Eb[os,:,t-1], dims=2))
     append!(index, ψ1*(rL.*L[:,t-1]+sum(Pb[:,os,t], dims=2))+ψ3*sum(S[:,:,t], dims=1)./sum(Fh[:,:,t-1], dims=2))
-    index = max.(zeros(O), index)
+    index = max.(zeros(O+N), index)
     index /= sum(index)
     # ポートフォリオ配分先の数Int64(x[l])を決めるための準備。
     x = 0.5*Vs./mean(sum(C[os,:,t], dims=1))
@@ -435,6 +435,8 @@ function one_season(TIMERANGE)
         E[os,t] = E[os,t-1] + pe[os,t-1].*Δe[os,t]
         e[os,t] = e[os,t-1] + Δe[os,t]
         household_portfolio_func(t)
+				# fhとfの計算をここに入れる
+				pf[:,t] = sum(Fh[:,:,t], dims=2)/f
         Eb_func(t)
         pe[os,t] = (sum(Eh[os,:,t], dims=2)+sum(Eb[os,:,t], dims=2))./e[os,t]
         for l=1:L
