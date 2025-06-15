@@ -26,7 +26,9 @@ G0 = 1.0*O
 
 EMP = zeros(Int64, L,TIME)
 G_calc_item, G_potential = ones(O), ones(O)
-os =[o for o=1:O]
+os = [o for o=1:O]
+
+# 関数定義
 
 function G_func(t)
     global G
@@ -465,3 +467,19 @@ function one_season(TIMERANGE)
         
     end
 end
+
+# 初期値設定
+# 雇用ネットワーク
+# 株式保有ネットワーク
+# 預金貸借ネットワーク
+# 借入金貸借ネットワーク
+
+
+for _=1:1000
+		G_func(0)
+end
+
+
+# シミュレーション
+
+# プロット
