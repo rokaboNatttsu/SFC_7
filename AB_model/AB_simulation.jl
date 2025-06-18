@@ -2,7 +2,7 @@ using StatsPlots
 using StatsBase
 using Random
 
-J, O, N, TIME,  = 20, 5, 2, 100
+J, O, N, TIME,  = 20, 5, 2, 10
 OBuffer = 50
 Oin = 1
 
@@ -21,7 +21,7 @@ H, ΔH = zeros(N, TIME), zeros(N, TIME)
 K, k = zeros(OBuffer, TIME), zeros(OBuffer, TIME)
 DE, DF = zeros(TIME), zeros(TIME)
 NWh, NWf, NWb, NWg, NWg, NW = zeros(J, TIME), zeros(OBuffer, TIME), zeros(N, TIME), zeros(TIME), zeros(TIME), zeros(TIME)
-v = zeros(OBuffer)
+u, v, A = zeros(OBuffer, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME)
 
 EMP = zeros(Int64, J,TIME)
 G_calc_item, G_potential = ones(O), ones(O)
@@ -44,14 +44,14 @@ uT = 0.8
 θ1, θ2 = 0.2, 0.1
 ϕ = 1.0
 ψ1, ψ2, ψ3 = 0.1, 0.01, 1.0
-ζ1, ζ2, ζ3 = 0.05, 0.02, 0.04
+ζ1, ζ2, ζ3 = 0.1, 0.02, 0.04 # 0.05,0.02,0.04
 
 # 関数定義
 
 function G_func(t)
     global G, G_calc_item, G_potential
     Gsum = G0*(1+β1)^(t-1)
-    G_calc_item .*= 1.0 .+ β2.*(-1.0 .+ β3*randn(O))
+    G_calc_item .*= 1.0 .+ β2*(-1.0 .+ β3*randn(O))
     G_calc_item = max.(1.0, G_calc_item)
     G_potential = max.(0.0, G_calc_item .- β4)
     G[os,t] = G_potential.*Gsum/sum(G_potential)
@@ -70,7 +70,8 @@ function c_func(t)
     end
     r /= r[end]
     # 消費額を計算
-    Cs = α1*(sum(W[:,os,t-1], dims=1)-Ta[:,t]-Ti[:,t]-rL*sum(Lh[os,:,t-1], dims=2)+sum(Ph[:,os,t-1], dims=1)+sum(S[:,:,t-1], dims=1))+α2*(sum(Eh[:,:,t-1], dims=1)+sum(Mh[:,:,t-1], dims=1)-sum(Lh[:,:,t-1], dims=1))
+    Cs = α1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)-Ta[:,t]-Ti[:,t]-rL*dropdims(sum(Lh[:,:,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2)) 
+        +α2*(dropdims(sum(Eh[:,os,t-1], dims=2);dims=2)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
     # 消費先の企業を選ぶ
     for j=1:J
         # 前期の消費先の特定
@@ -101,14 +102,30 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
     global w, W, EMP, v
     flotations_js = [info[2] for info in flotation_info]
     flotations_os = [info[3] for info in flotation_info]
+    # 求人数を作る
+    offers = [Int64(max(0, (u[o,t-1]*k[o,t-1]-A[o,t-1]*sum(W[:,o,t-1].>0))/A[o,t-1])) for o in os]
+    # 応募確率を作る
+    prob = deepcopy(offers)
+    for q in 1:O
+        if q==1
+            continue
+        else
+            prob[q] += prob[q-1]
+        end
+    end
+    if prob[end] > 0.0
+        prob /= prob[end]
+    end
+    # 応募先リストの箱を用意
+    appli = [[] for _ = 1:O]
     for j=1:J
         if EMP[j,t-1] > 0 # 前期就業していた人
             if rand() < ζ1 # 今期失業していた場合
-                W[j,EMP[j,t],t] = v[EMP[j,t-1]]*w[j,t-1]
+                W[j,EMP[j,t-1],t] = v[EMP[j,t-1],t-1]*w[j,t-1]
             else # 今期も同じ企業で就業する場合
                 EMP[j,t] = EMP[j,t-1]
                 w[j,t] = w[j,t-1]*(1+ζ2*abs(randn()))
-                W[j,EMP[j,t],t] = v[EMP[j,t-1]]*w[j,t-1]
+                W[j,EMP[j,t-1],t] = v[EMP[j,t-1],t-1]*w[j,t-1]
             end
         elseif j in flotations_js # 起業メンバー
             for (x,j1) in enumerate(flotations_js)
@@ -119,42 +136,31 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
                 end
             end
         else # 前期失業していた人
-            # 求人数を作る
-            offers = [Int64(max(0, (u[o,t-1]*k[o,t-1]-A[o,t]*sum(W[:,o,t-1]>0))/A[o,t-1])) for o in os]
-            # 応募確率を作る
-            prob = deepcopy(offers)
-            for q in 1:O
-                if q==1
-                    continue
-                else
-                    prob[q] += prob[q-1]
-                end
+            if prob[end] == 0.0 # 募集がなければパス
+                continue
             end
-            prob /= prob[end]
             # 応募先を割り振る
-            appli = [[] for _ = 1:O]
-            for j=1:J
-                if EMP[j,t-1] == 0
-                    q = searchsortedlast(prob, rand())
-                    push!(appli[q], j)
-                end
-            end
-            # マッチング
-            for q=1:O
-                if offers[q] > 0 & length(appli[q]) > 0
-                    much = collect(Set(sample(appli[q], offers[q])))
-                    for x=1:length(much)
-                        j = much[x]
-                        EMP[j,t] = os[q]
-                        w[j,t] = w[j,t-1]*(1+ζ2*abs(randn()))
-                    end
-                end
+            q = searchsortedlast(prob, rand())
+            push!(appli[q], j)
+        end
+    end
+    # マッチング
+    for q=1:O
+        if offers[q] > 0 & length(appli[q]) > 0
+            much = collect(Set(sample(appli[q], offers[q])))
+            for x=1:length(much)
+                j = much[x]
+                EMP[j,t] = os[q]
+                w[j,t] = w[j,t-1]*(1+ζ2*abs(randn()))
             end
         end
     end
     # 従業員が0にならないように対策
     s = Set(EMP[:,t])
     UE = findall(x -> x == 0, EMP[:,t])
+    if length(UE)==0
+        return
+    end
     for o in os
         if !(o in s)
             j = sample(UE)
@@ -162,7 +168,7 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
             EMP[j,t] = o
             w[j,t] = w[j,t-1]*(1+ζ2*abs(randn()))
             if EMP[j,t-1] > 0
-                W[j,EMP[j,t],t] = v[EMP[j,t-1]]*w[j,t-1]
+                W[j,EMP[j,t-1],t] = v[EMP[j,t-1]]*w[j,t-1]
             end
         end
     end
@@ -253,9 +259,9 @@ function Eb_func(t)
     # 企業の株の保有額の見積もり
     Vs = sum(Eb[os,:,t-1], dims=1)+NLb[:,t]
     # ポートフォリオ配分先の確率の重みの共通部分を計算
-    index = ψ1*(Pf[os,t] - I[os,t])\
-            +ψ2*(sum(Mf[:,os,t-1], dims=1)-sum(Lf[os,:,t-1], dims=2))\
-            +ψ3*(P[os,t]-Pf[os,t])./(sum(Eh[os,:,t-1], dims=2)+sum(Eb[os,:,t-1], dims=2))\
+    index = ψ1*(Pf[os,t] - I[os,t]) 
+            +ψ2*(sum(Mf[:,os,t-1], dims=1)-sum(Lf[os,:,t-1], dims=2)) 
+            +ψ3*(P[os,t]-Pf[os,t])./(sum(Eh[os,:,t-1], dims=2)+sum(Eb[os,:,t-1], dims=2)) 
             +ψ4*(sum(Eh[os,:,t-1], dims=2)+sum(Eb[os,:,t-1], dims=2))/(sum(Eh[os,:,t-1])+sum(Eb[os,:,t-1]))
     index = exp.(index./(sum(Eh[os,:,t])+sum(Eb[os,:,t])))
     index /= sum(index)
@@ -367,9 +373,6 @@ function flotation(t) # 起業
         # 企業情報リストに追加
         push!(floations_info, [cap_j, work_j, o])
         
-        # 生存企業のリストにIDを追加
-        push!(os, o)
-
         # 必要なストックの初期状態の定義
         cap_Mf = 0.0
         for n=1:N
@@ -397,10 +400,14 @@ function flotation(t) # 起業
         NWf[o,t-1] += cap_Mf
         # 企業が価格のつかない資本を持つことに伴う変化
         k[o,t-1] = 1.0
+        A[o,t-1] = sample(A[os,t-1])
+
+        # 生存企業のリストにIDを追加
+        push!(os, o)
     end
     # 政府支出受注額決定のための配列を更新
-    append!(G_calc_item, [1.0 for _=1:Oin-1])
-    append!(G_potential, [0.0 for _=1:Oin-1])
+    append!(G_calc_item, [1.0 for _=1:Oin])
+    append!(G_potential, [0.0 for _=1:Oin])
     # 企業総数を更新
     O += 1
 
@@ -426,48 +433,48 @@ function one_season(TIMERANGE)
         flotation_info = flotation(t)
         p[os,t] = (1+ν1).*(dropdims(sum(W[:,os,t-1], dims=1);dims=1)+Tv[os,t-1]+Tc[os,t-1]+δ*k[os,t-1])./(uT*γ1*k[os,t-1])+ν2*(mean(p[os,t-1]).-p[os,t-1])
         w_and_W_func(t, flotation_info)
-        Ti[:,t] = τ1*(sum(W[:,:,t-1], dims=2)+sum(P[:,:,t-1], dims=2)+S[:,n,t-1])
-        Ta[:,t] = τ2*(sum(Eh[:,:,t-1], dims=1)+sum(Mh[:,:,t-1], dims=1)-sum(Lh[:,:,t-1], dims=2))
-        Tv[:,t] = τ3*(sum(C[:,:,t-1], dims=2)+I[:,t-1]+G[:,t-1])
-        Tc[:,t] = τ4*(sum(C[:,:,t-1], dims=2)+G[:,t-1]+I[:,t-1]-sum(W[:,:,t-1], dims=1)-Tv[:,t-1])
+        Ti[:,t] = τ1*(dropdims(sum(W[:,:,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2))
+        Ta[:,t] = τ2*(dropdims(sum(Eh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
+        Tv[:,t] = τ3*(dropdims(sum(C[:,:,t-1], dims=2);dims=2)+I[:,t-1]+G[:,t-1])
+        Tc[:,t] = τ4*(dropdims(sum(C[:,:,t-1], dims=2);dims=2)+G[:,t-1]+I[:,t-1]-dropdims(sum(W[:,:,t-1], dims=1);dims=1)-Tv[:,t-1])
         G_func(t)
         g[os,t] = G[os,t]./p[os,t]
         c_func(t)
         for o in os
             C[o,:,t] = p[o,t]*c[o,:,t]
         end
-        A[os,t] = A[os,t-1]*(1+μ1.+μ2*i[os,t-1]./k[os,t-1])
-        u[os,t] = (sum(c[os,:,t], dims=2)+i[os,t]+g[os,t])./(γ1*k[os,t-1])
-        i[os,t] = max.(0.0, δ*k[os,t-1]+(u[os,t-1]-uT).*γ1.*k[os,t-1]+γ2*(sum(Mf[:,os,t-1], dims=1)-sum(Lf[os,:,t-1], dims=2))./p[os,t-1])
+        A[os,t] = A[os,t-1].*(1+μ1.+μ2*i[os,t-1]./k[os,t-1])
+        u[os,t] = (dropdims(sum(c[os,:,t], dims=2);dims=2)+i[os,t]+g[os,t])./(γ1*k[os,t-1])
+        i[os,t] = max.(0.0, δ*k[os,t-1]+(u[os,t-1]-uT).*γ1.*k[os,t-1]+γ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2)))./p[os,t-1])
         I[os,t] = p[os,t].*i[os,t]
         k[os,t] = (1-δ).*k[os,t-1]+i[os,t]
         K[os,t] = p[os,t].*k[os,t]
-        P[os,t] = sum(C[os,:,t], dims=2)+G[os,t]+I[os,t]-sum(W[:,os,t], dims=1)-Tc[os,t]-Tv[os,t]-rL*sum(Lf[os,:,t-1], dims=2)
+        P[os,t] = dropdims(sum(C[os,:,t], dims=2);dims=2)+G[os,t]+I[os,t]-dropdims(sum(W[:,os,t], dims=1);dims=1)-Tc[os,t]-Tv[os,t]-rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)
         for o in os
             Ph[:,o,t] = max(0.0, θ1*(P[o,t]-I[o,t])+θ2*(sum(Mf[:,o,t-1])-sum(Lf[o,:,t-1]))).*eh[o,:,t-1]./e[o,t-1]
             Pb[:,o,t] = max(0.0, θ1*(P[o,t]-I[o,t])+θ2*(sum(Mf[:,o,t-1])-sum(Lf[o,:,t-1]))).*eb[o,:,t-1]./e[o,t-1]
         end
-        Pf[os,t] = P[os,t] - sum(Ph[:,os,t], dims=1) - sum(Pb[:,os,t], dims=1)
+        Pf[os,t] = P[os,t] - dropdims(sum(Ph[:,os,t], dims=1);dims=1) - dropdims(sum(Pb[:,os,t], dims=1);dims=1)
         for n=1:N
             S[:,n,t] = (θ1*(rL*L[n,t-1]+sum(Pb[n,os,t]))+θ2*sum(Eb[os,n,t-1])).*fb[:,n,t-1]./f[n,t-1]
         end
-        NLh[:,t] = -sum(C[os,:,t], dims=1) + sum(W[:,os,t], dims=2)-Ti[:,t]-Ta[:,t]-rL*sum(Lh[:,:,t-1], dims=2)+sum(Ph[:,os,t], dims=2)+sum(S[:,:,t], dims=2)
+        NLh[:,t] = -dropdims(sum(C[os,:,t], dims=1);dims=1) + dropdims(sum(W[:,os,t], dims=2);dims=2)-Ti[:,t]-Ta[:,t]-rL*dropdims(sum(Lh[:,:,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t], dims=2);dims=2)+dropdims(sum(S[:,:,t], dims=2);dims=2)
         NLf[os,t] = -I[os,t] + Pf[os,t]
-        NLb[:,t] = rL*L[:,t-1] + sum(Pb[:,os,t], dims=2) - sum(S[:,:,t], dims=1)
+        NLb[:,t] = rL*L[:,t-1] + dropdims(sum(Pb[:,os,t], dims=2);dims=2) - dropdims(sum(S[:,:,t], dims=1);dims=1)
         NLg[t] = -sum(G[:,t])+sum(Ti[:,t])+sum(Ta[:,t])+sum(Tv[os,t])+sum(Tc[os,t])
         Lh_func(t)
         ΔLh[:,:,t] = Lh[:,:,t] - Lh[:,:,t-1]
         ΔLf_and_Lf_func(t)
-        L[:,t] = sum(Lh[:,:,t], dims=1) + sum(Lf[os,:,t], dims=1)
+        L[:,t] = dropdims(sum(Lh[:,:,t], dims=1);dims=1) + dropdims(sum(Lf[os,:,t], dims=1);dims=1)
         ΔL[:,t] = L[:,t] - L[:t-1]
-        Δe[os,t] = 1/p[os,t-1]*(1-λ3-λ4*((P[os,t]-Pf[os,t])./(sum(Eh[os,:,t-1], dims=2)+sum(Eb[os,:,t-1], dims=2))-rL)).*(I[os,t]+sum(W[:,os,t], dims=1)+Tv[os,t]+Tc[os,t]+rL*sum(Lf[os,:,t-1], dims=2)-ϕ*sum(Mf[:,os,t-1], dims=1))
+        Δe[os,t] = 1/p[os,t-1]*(1-λ3-λ4*((P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2))-rL)).*(I[os,t]+dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1))
         E[os,t] = E[os,t-1] + pe[os,t-1].*Δe[os,t]
         e[os,t] = e[os,t-1] + Δe[os,t]
         household_portfolio_func(t)
 		# fhとfの計算をここに入れる
-		pf[:,t] = sum(Fh[:,:,t], dims=2)./sum(fh[:,:,t], dims=2)
+		pf[:,t] = dropdims(sum(Fh[:,:,t], dims=2);dims=2)./dropdims(sum(fh[:,:,t], dims=2);dims=2)
         Eb_func(t)
-        pe[os,t] = (sum(Eh[os,:,t], dims=2)+sum(Eb[os,:,t], dims=2))./e[os,t]
+        pe[os,t] = (dropdims(sum(Eh[os,:,t], dims=2);dims=2)+dropdims(sum(Eb[os,:,t], dims=2);dims=2))./e[os,t]
         for j=1:J
             eh[os,j,t] = Eh[os,j,t]./pe[os,t]
         end
@@ -478,13 +485,13 @@ function one_season(TIMERANGE)
         Δeb[os,:,t] = eb[os,:,t] - eb[os,:,t-1]
         ΔMh_and_Mh_func(t)
         ΔMf_and_Mf_func(t)
-        M[:,t] = sum(Mh[:,:,t], dims=2)+sum(Mf[:,os,t], dims=2)
+        M[:,t] = dropdims(sum(Mh[:,:,t], dims=2);dims=2)+dropdims(sum(Mf[:,os,t], dims=2);dims=2)
         ΔM[:,t] = M[:,t] - M[:,t-1]
         ΔH[:,t] = NLb[:,t]-[sum(pe[os,t].*Δeb[os,n,t]) for n=1:N]+ΔM[:,t]-ΔL[:,t]
         H[:,t] = H[:,t-1] + ΔH[:,t]
-        NWh[:,t] = sum(Mh[:,:,t], dims=1)-sum(Lh[:,:,t], dims=2)+sum(Eh[os,:,t], dims=1)
-        NWf[os,t] = K[os,t]+sum(Mf[:,os,t], dims=1)+sum(Lf[os,:,t], dims=2)-E[os,t]
-        NWb[:,t] = -M[:,t]+L[:,t]+sum(Eb[os,:,t], dims=1)+H[:,t]
+        NWh[:,t] = dropdims(sum(Mh[:,:,t], dims=1);dims=1)-dropdims(sum(Lh[:,:,t], dims=2);dims=2)+dropdims(sum(Eh[os,:,t], dims=1);dims=1)
+        NWf[os,t] = K[os,t]+dropdims(sum(Mf[:,os,t], dims=1);dims=1)+dropdims(sum(Lf[os,:,t], dims=2);dims=2)-E[os,t]
+        NWb[:,t] = -M[:,t]+L[:,t]+dropdims(sum(Eb[os,:,t], dims=1);dims=1)+H[:,t]
         NWg[t] = sum(H[:,t])
         DE[t] = -sum(E[os,t])+sum(Eh[os,:,t])+sum(Eb[os,:,t])
         DF[t] = sum(Fh[:,:,t])-sum(F[:,t])
@@ -545,9 +552,10 @@ function initialise()
     end
     L[:,1] = sum(Lh[:,:,1],dims=1)+sum(Lf[:,:,1],dims=1)
     #* 初期資本と初期価格
-    k[os,1] .= 1.0
+    k[os,1] .= J/O
     p[os,1] .= 0.0
     K[os,1] = p[os,1].*k[os,1]
+    A[os,1] .= 1.0
     #* 現金ネットワーク
     H[:,1] .= 1.0
     #* ストックの整合性を保証
