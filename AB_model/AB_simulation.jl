@@ -121,7 +121,9 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
     appli = [[] for _ = 1:O]
     for j=1:J
         if EMP[j,t-1] > 0 # 前期就業していた人
-            if rand() < ζ1 # 今期失業していた場合
+            if !(EMP[j,t-1] in os)  # 勤め先が倒産した場合
+                continue
+            elseif rand() < ζ1 # 今期失業する場合
                 W[j,EMP[j,t-1],t] = v[EMP[j,t-1],t-1]*w[j,t-1]
             else # 今期も同じ企業で就業する場合
                 EMP[j,t] = EMP[j,t-1]
@@ -183,7 +185,7 @@ end
 
 function Lh_func(t)
     global Lh
-    Lhs = ϵ1*NLh[:,t] + ϵ2*sum(C[os,:,t], dims=1)
+    Lhs = max.(0.0, ϵ1*NLh[:,t] + ϵ2*dropdims(sum(C[os,:,t], dims=1);dims=1))
     for j=1:J
         for n=1:N
             if Mh[n,j,t-1] > 0.0
@@ -196,25 +198,16 @@ end
 
 function ΔLf_and_Lf_func(t)
     global ΔLf, Lf
-    ΔLfs = max.(-sum(Lf[os,:,t-1], dims=2), (λ3+λ4*((P[os,t]-Pf[os,t])./(sum(Eh[os,:,t-1], dims=2)+sum(Eb[os,:,t-1], dims=2))-rL)).*(I[os,t]+sum(W[:,os,t], dims=1)+Tv[os,t]+Tc[os,t]+rL*sum(Lf[os,:,t-1], dims=2)-ϕ*sum(Mf[:,os,t-1], dims=1)))
+    ΔLfs = max.(-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2), (λ3.+λ4*((P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)).-rL)).*(I[os,t]+dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)))
     for o in os
-        for n=1:N
-            if Mf[n,o,t-1] > 0.0
-                if Lf[o,n,t-1] > 0.0
-                    Lf[o,n,t] = Lf[o,n,t-1] + ΔLfs[o]
-                    ΔLf[o,n,t] = ΔLfs[o]
-                else
-                    for n2=1:N
-                        if Lf[o,n2,t-1] > 0.0
-                            Lf[o,n2,t] = Lf[o,n,t-1] + ΔLfs[o]
-                            ΔLf[o,n,t-1] = -Lf[o,n,t-1]
-                            ΔLf[o,n2,t] = Lf[o,n,t-1] + ΔLfs[o]
-                            break
-                        end
-                    end
-                end
-                break
-            end
+        nLf, nMf = findfirst(x -> x > 0.0, Lf[o,:,t-1]), findfirst(x -> x > 0.0, Mf[:,o,t-1])
+        if (nLf == nMf) | (nLf==nothing)
+            Lf[o,nMf,t] = Lf[o,nMf,t-1] + ΔLfs[o]
+            ΔLf[o,nMf,t] = ΔLfs[o]
+        else
+            Lf[o,nMf,t] = Lf[o,nLf,t-1] + ΔLfs[o]
+            ΔLf[o,nMf,t] = Lf[o,nLf,t-1] + ΔLfs[o]
+            ΔLf[o,nLf,t] = -Lf[o,nLf,t-1]
         end
     end
 end
@@ -458,7 +451,7 @@ function one_season(TIMERANGE)
         end
         Pf[os,t] = P[os,t] - dropdims(sum(Ph[:,os,t], dims=1);dims=1) - dropdims(sum(Pb[:,os,t], dims=1);dims=1)
         for n=1:N
-            S[:,n,t] = (θ1*(rL*L[n,t-1]+sum(Pb[n,os,t]))+θ2*sum(Eb[os,n,t-1])).*fh[:,n,t-1]./f[n,t-1]
+            S[:,n,t] = (θ1*(rL*L[n,t-1]+sum(Pb[n,os,t]))+θ2*sum(Eb[os,n,t-1])).*fh[n,:,t-1]/f[n,t-1]
         end
         NLh[:,t] = -dropdims(sum(C[os,:,t], dims=1);dims=1) + dropdims(sum(W[:,os,t], dims=2);dims=2)-Ti[:,t]-Ta[:,t]-rL*dropdims(sum(Lh[:,:,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t], dims=2);dims=2)+dropdims(sum(S[:,:,t], dims=2);dims=2)
         NLf[os,t] = -I[os,t] + Pf[os,t]
@@ -468,7 +461,7 @@ function one_season(TIMERANGE)
         ΔLh[:,:,t] = Lh[:,:,t] - Lh[:,:,t-1]
         ΔLf_and_Lf_func(t)
         L[:,t] = dropdims(sum(Lh[:,:,t], dims=1);dims=1) + dropdims(sum(Lf[os,:,t], dims=1);dims=1)
-        ΔL[:,t] = L[:,t] - L[:t-1]
+        ΔL[:,t] = L[:,t] - L[:,t-1]
         Δe[os,t] = 1/p[os,t-1]*(1-λ3-λ4*((P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2))-rL)).*(I[os,t]+dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1))
         E[os,t] = E[os,t-1] + pe[os,t-1].*Δe[os,t]
         e[os,t] = e[os,t-1] + Δe[os,t]
