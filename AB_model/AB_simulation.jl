@@ -37,14 +37,15 @@ uT = 0.8
 γ1, γ2 = 1.0, 0.02
 δ = 0.05
 ϵ1, ϵ2 = 1.0, 1.0
-λ3, λ4 = 0.5, 5.0
+λ1, λ2, λ3, λ4 = 0.3, 1.0, 0.5, 5.0
 τ1, τ2, τ3, τ4 = 0.3, 0.02, 0.1, 0.2
 μ1, μ2 = 0.0, 0.1
 ν1, ν2 = 0.3, 0.5
 θ1, θ2 = 0.2, 0.1
 ϕ = 1.0
-ψ1, ψ2, ψ3 = 0.1, 0.01, 1.0
+ψ1, ψ2, ψ3, ψ4 = 0.1, 0.01, 1.0, 1.0
 ζ1, ζ2, ζ3 = 0.1, 0.02, 0.04 # 0.05,0.02,0.04
+ξ1 = 0.05
 
 # 関数定義
 
@@ -215,28 +216,35 @@ end
 function household_portfolio_func(t)
     global Eh, Fh
     # 金融資産額の推定
-    Vs = sum(Mh[:,:,t-1], dims=1)+sum(Eh[:,:,t-1], dims=1)+sum(Fh[:,:,t-1], dims=1)+NLh[:,t]
+    Vs = dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Eh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Fh[:,:,t-1], dims=1);dims=1)+NLh[:,t]
     # ポートフォリオ配分先の確率の重みの共通部分を計算
-    index = ψ1*(Pf[os,t] - I[os,t])+ψ2*(sum(Mf[:,os,t-1], dims=1)-sum(Lf[os,:,t-1], dims=2))+ψ3*(P[os,t]-Pf[os,t])./(sum(Eh[os,:,t-1], dims=2)+sum(Eb[os,:,t-1], dims=2))
-    append!(index, ψ1*(rL.*L[:,t-1]+sum(Pb[:,os,t], dims=2))+ψ3*sum(S[:,:,t], dims=1)./sum(Fh[:,:,t-1], dims=2))
+    index = ψ1*(Pf[os,t] - I[os,t])+ψ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))+ψ3*(P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2))
+    append!(index, ψ1*(rL.*L[:,t-1]+dropdims(sum(Pb[:,os,t], dims=2);dims=2))+ψ3*dropdims(sum(S[:,:,t], dims=1);dims=1)./dropdims(sum(Fh[:,:,t-1], dims=2);dims=2))
     index = max.(zeros(O+N), index)
     index /= sum(index)
     # ポートフォリオ配分先の数Int64(x[j])を決めるための準備。
     x = 0.5*Vs./mean(sum(C[os,:,t], dims=1))
     # 家計jのポートフォリオ計算
     for j=1:J
+        lastEhFhSum = sum(Eh[os,j,t-1])+sum(Fh[:,j,t-1])
         # ポートフォリオ配分先に選ぶ確率の重み付けを決める
         tmp = Eh[os,j,t-1]
         append!(tmp, Fh[:,j,t-1])
-        prob = index + tmp/(sum(Eh[os,j,t-1])+sum(Fh[:,j,t-1]))
+        prob = index
+        if lastEhFhSum !== 0.0
+            prob = index + tmp/(lastEhFhSum)
+        end
         prob /= sum(prob)
         # ポートフォリオ配分先のリストを作る
-        lst = sample(1:(O+N), Weights(prob), Int64(x[j]))
+        lst = sample(1:(O+N), Weights(prob), Int64(round(x[j])))
         if length(lst)==0
             continue
         end
         # 収益率から、資産に占める株式の割合の目標を計算し、保有額を決める
-        EF_volume = Vs[j]*(λ1 + λ2*(sum(Ph[j,os,t])+sum(S[j,:,t]))/(sum(Eh[os,j,t-1])+sum(F[:,j,t-1])))
+        EF_volume = Vs[j]*λ1
+        if lastEhFhSum!==0.0
+            EF_volume = Vs[j]*(λ1 + λ2*(sum(Ph[j,os,t])+sum(S[j,:,t]))/(lastEhFhSum))
+        end
         # EF_volume/length(lst)を単位としてlstの企業または銀行の株の保有割合を決める
         for on in lst
             if on <= O
@@ -250,22 +258,20 @@ end
 
 function Eb_func(t)
     global Eb
-    # 企業の株の保有額の見積もり
-    Vs = sum(Eb[os,:,t-1], dims=1)+NLb[:,t]
     # ポートフォリオ配分先の確率の重みの共通部分を計算
     index = ψ1*(Pf[os,t] - I[os,t]) 
-            +ψ2*(sum(Mf[:,os,t-1], dims=1)-sum(Lf[os,:,t-1], dims=2)) 
-            +ψ3*(P[os,t]-Pf[os,t])./(sum(Eh[os,:,t-1], dims=2)+sum(Eb[os,:,t-1], dims=2)) 
-            +ψ4*(sum(Eh[os,:,t-1], dims=2)+sum(Eb[os,:,t-1], dims=2))/(sum(Eh[os,:,t-1])+sum(Eb[os,:,t-1]))
-    index = exp.(index./(sum(Eh[os,:,t])+sum(Eb[os,:,t])))
+            +ψ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)) 
+            +ψ3*(P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)) 
+            +ψ4*(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2))/(sum(Eh[os,:,t-1])+sum(Eb[os,:,t-1]))
+    index = exp.(O*index./(sum(Eh[os,:,t-1])+sum(Eb[os,:,t-1])))
     index /= sum(index)
     # 銀行nのポートフォリオ計算
     for n=1:N
         # ポートフォリオ配分割合を決める
-        prob = index*abs.(1+0.1*randn(N)) + Eb[os,n,t-1]/(sum(Eb[os,n,t-1]))
+        prob = index.*abs.(1.0.+0.1*randn(O)) + Eb[os,n,t-1]/(sum(Eb[os,n,t-1]))
         prob /= sum(prob)
-        # 収益率から、保有する株式の総額目標を計算
-        E_volume = Vs[n]*(1 + λ2*sum(Pb[n,os,t])/sum(Eb[os,n,t-1]))
+        # 収益率から、保有する株式の総額目標を決定
+        E_volume = L[n,t-1]*(1.0 .+ λ2*(sum(Pb[n,os,t])/sum(Eb[os,n,t-1]).-rL))
         # ポートフォリオ決定
         Eb[os,n,t] = E_volume*prob
     end
@@ -462,12 +468,15 @@ function one_season(TIMERANGE)
         ΔLf_and_Lf_func(t)
         L[:,t] = dropdims(sum(Lh[:,:,t], dims=1);dims=1) + dropdims(sum(Lf[os,:,t], dims=1);dims=1)
         ΔL[:,t] = L[:,t] - L[:,t-1]
-        Δe[os,t] = 1/p[os,t-1]*(1-λ3-λ4*((P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2))-rL)).*(I[os,t]+dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1))
+        Δe[os,t] = 1/p[os,t-1]*(1-λ3.-λ4*((P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)).-rL)).*(I[os,t]+dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1))
         E[os,t] = E[os,t-1] + pe[os,t-1].*Δe[os,t]
         e[os,t] = e[os,t-1] + Δe[os,t]
         household_portfolio_func(t)
-		# fhとfの計算をここに入れる
-		pf[:,t] = dropdims(sum(Fh[:,:,t], dims=2);dims=2)./dropdims(sum(fh[:,:,t], dims=2);dims=2)
+        f[:,t] = f[:,t-1]
+		pf[:,t] = dropdims(sum(Fh[:,:,t], dims=2);dims=2)./sum(f[:,t])
+        for j=1:J
+            fh[:,j,t] = Fh[:,j,t]./pf[:,t]
+        end
         Eb_func(t)
         pe[os,t] = (dropdims(sum(Eh[os,:,t], dims=2);dims=2)+dropdims(sum(Eb[os,:,t], dims=2);dims=2))./e[os,t]
         for j=1:J
@@ -539,8 +548,9 @@ function initialise()
         Fh[:,j,1] /= sum(Fh[:,j,1])
     end
     F[:,1] = sum(Fh[:,:,1],dims=2)
-    fh[:,:,1], f[:,1] = Fh[:,:,1], F[:,1]
-    pf[:,1] .= 1.0
+    fh[:,:,1] .= 1.0/J
+    f[:,1] .= 1.0
+    pf[:,1] = F[:,1]./f[:,1]
     #* 預金貸借ネットワーク
     for j=1:J
         Mh[:,j,1] = shuffle(lstn)
