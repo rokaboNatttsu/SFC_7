@@ -71,19 +71,20 @@ function c_func(t)
     r /= r[end]
     # 消費額を計算
     Cs = α1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)-Ta[:,t]-Ti[:,t]-rL*dropdims(sum(Lh[:,:,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2)) 
-        +α2*(dropdims(sum(Eh[:,os,t-1], dims=2);dims=2)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
-    # 消費先の企業を選ぶ
+        +α2*(dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
+    Cs = max.(Cs, 0.0)
+        # 消費先の企業を選ぶ
     for j=1:J
         # 前期の消費先の特定
         last_o = findall(x -> x > 0.0, c[:,j,t-1])[1]
         # 消費先変更するかどうかの決定
-        trans = rand() < α3*(p[last_o,t]-mean(p[os,t]))/p[os,t]
+        trans = rand() < α3*(p[last_o,t]-mean(p[os,t]))/p[last_o,t]
         if !(last_o in os)
             trans = true
         end
         # 消費先の選択
         if trans # 変更する場合
-            new_o = os[searchsortedlast(r, rand())]
+            new_o = os[1+searchsortedlast(r, rand())]
             c[new_o,j,t] = Cs[j]/p[new_o,t]
         else # 前回と同じ消費先を選ぶ場合
             c[last_o,j,t] = Cs[j]/p[last_o,t]
@@ -140,7 +141,7 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
                 continue
             end
             # 応募先を割り振る
-            q = searchsortedlast(prob, rand())
+            q = 1+searchsortedlast(prob, rand())
             push!(appli[q], j)
         end
     end
@@ -364,9 +365,10 @@ function flotation(t) # 起業
     end
     prob = max.(0.0, NWh[:, t-1])
     prob /= sum(prob)
-    capitalists_js = sample(1:J, Weights(prob), Oin, replace=false)
-    workers_js = sample(findall(x -> x == 0, EMP[:,t-1]), Oin, replace=false)
-    for (x, o) in enumerate(next_o:next_o+Oin-1)
+    floation_count = min(Oin, sum(EMP[:,t-1].==0.0))
+    capitalists_js = sample(1:J, Weights(prob), floation_count, replace=false)
+    workers_js = sample(findall(x -> x == 0, EMP[:,t-1]), floation_count, replace=false)
+    for (x, o) in enumerate(next_o:next_o+floation_count-1)
         work_j = workers_js[x]
         cap_j = capitalists_js[x]
 
@@ -406,10 +408,10 @@ function flotation(t) # 起業
         push!(os, o)
     end
     # 政府支出受注額決定のための配列を更新
-    append!(G_calc_item, [1.0 for _=1:Oin])
-    append!(G_potential, [0.0 for _=1:Oin])
+    append!(G_calc_item, [1.0 for _=1:floation_count])
+    append!(G_potential, [0.0 for _=1:floation_count])
     # 企業総数を更新
-    O += 1
+    O += floation_count
 
     return floations_info
 end
@@ -445,7 +447,7 @@ function one_season(TIMERANGE)
         end
         A[os,t] = A[os,t-1].*(1+μ1.+μ2*i[os,t-1]./k[os,t-1])
         u[os,t] = (dropdims(sum(c[os,:,t], dims=2);dims=2)+i[os,t]+g[os,t])./(γ1*k[os,t-1])
-        i[os,t] = max.(0.0, δ*k[os,t-1]+(u[os,t-1]-uT).*γ1.*k[os,t-1]+γ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2)))./p[os,t-1])
+        i[os,t] = max.(0.0, δ*k[os,t-1]+(u[os,t].-uT).*γ1.*k[os,t-1]+γ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))./p[os,t])
         I[os,t] = p[os,t].*i[os,t]
         k[os,t] = (1-δ).*k[os,t-1]+i[os,t]
         K[os,t] = p[os,t].*k[os,t]
@@ -456,7 +458,7 @@ function one_season(TIMERANGE)
         end
         Pf[os,t] = P[os,t] - dropdims(sum(Ph[:,os,t], dims=1);dims=1) - dropdims(sum(Pb[:,os,t], dims=1);dims=1)
         for n=1:N
-            S[:,n,t] = (θ1*(rL*L[n,t-1]+sum(Pb[n,os,t]))+θ2*sum(Eb[os,n,t-1])).*fb[:,n,t-1]./f[n,t-1]
+            S[:,n,t] = (θ1*(rL*L[n,t-1]+sum(Pb[n,os,t]))+θ2*sum(Eb[os,n,t-1])).*fh[:,n,t-1]./f[n,t-1]
         end
         NLh[:,t] = -dropdims(sum(C[os,:,t], dims=1);dims=1) + dropdims(sum(W[:,os,t], dims=2);dims=2)-Ti[:,t]-Ta[:,t]-rL*dropdims(sum(Lh[:,:,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t], dims=2);dims=2)+dropdims(sum(S[:,:,t], dims=2);dims=2)
         NLf[os,t] = -I[os,t] + Pf[os,t]
@@ -510,11 +512,22 @@ function initialise()
     global Lh, Lf, L
     global K, k, p, H
     global NWh, NWf, NWb, NWg, NW
+
+    lstj, lsto, lstn = zeros(J), zeros(O), zeros(N)
+    lstj[1], lsto[1], lstn[1] = 1.0, 1.0, 1.0
+    #* 消費ネットワーク
+    for j=1:J
+        c[os,j,1] = shuffle(lsto)
+    end
     #* 雇用ネットワーク
     EMP[:,1] = rand(0:O,J)
+    w[:,1] .= 1.0
+    for j=1:J
+        if EMP[j,1]!==0
+            W[j,EMP[j,1],1] = w[j,1]
+        end
+    end
     #* 企業株式保有ネットワーク
-    lstj, lstn = zeros(J), zeros(N)
-    lstj[1], lstn[1] = 1.0, 1.0
     for o in os
         Eh[o,:,1] = shuffle(lstj)
     end

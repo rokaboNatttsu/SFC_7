@@ -62,7 +62,7 @@ AB_simulatio,n.jlで実装する
 - $A^o=A_{-1}^o(1 + \mu_1 + \mu_2 \frac{i_{-1}^o}{k_{-1}^o})$
   - 技術水準上昇率が投資の一次関数として決まる。
 - $u^o = \frac{\sum_j c^{o,j}+i^o+g^o}{\gamma_1 k_{-1}^o}$
-- $i^o=\max\{0, \delta k_{-1}^o + (u_{-1}^o-u^T)\gamma_1 k_{-1}^o + \gamma_2\frac{\sum_n M_{f-1}^{n,o}-\sum_n L_{f-1}^{o,n}}{p^o}\}$
+- $i^o=\max\{0, \delta k_{-1}^o + (u^o-u^T)\gamma_1 k_{-1}^o + \gamma_2\frac{\sum_n M_{f-1}^{n,o}-\sum_n L_{f-1}^{o,n}}{p^o}\}$
 - $I^o=p^o i^o$
 - $k^o=(1-\delta)k_{-1}^o+i^o$
 - $K^o=p^o k^o$
