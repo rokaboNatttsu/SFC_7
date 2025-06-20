@@ -42,10 +42,10 @@ uT = 0.8
 μ1, μ2 = 0.0, 0.1
 ν1, ν2 = 0.3, 0.5
 θ1, θ2 = 0.2, 0.1
-ϕ = 1.0
+ϕ, ϕ2 = 1.0, 1.0
 ψ1, ψ2, ψ3, ψ4 = 0.1, 0.01, 1.0, 1.0
 ζ1, ζ2, ζ3 = 0.1, 0.02, 0.04 # 0.05,0.02,0.04
-ξ1 = 0.05
+ξ1, ξ2 = 0.05, 0.05
 
 # 関数定義
 
@@ -105,14 +105,14 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
     flotations_js = [info[2] for info in flotation_info]
     flotations_os = [info[3] for info in flotation_info]
     # 求人数を作る
-    offers = [Int64(max(0, (u[o,t-1]*k[o,t-1]-A[o,t-1]*sum(W[:,o,t-1].>0))/A[o,t-1])) for o in os]
+    offers = [Int64(round(max(0, (u[o,t-1]*k[o,t-1]-A[o,t-1]*sum(W[:,o,t-1].>0))/A[o,t-1]))) for o in os]
     # 応募確率を作る
-    prob = deepcopy(offers)
+    prob = zeros(O)
     for q in 1:O
         if q==1
-            continue
+            prob[1] = offers[1]
         else
-            prob[q] += prob[q-1]
+            prob[q] = prob[q-1] + offers[q]
         end
     end
     if prob[end] > 0.0
@@ -279,9 +279,13 @@ end
 
 function ΔMh_and_Mh_func(t)
     global ΔMh, Mh
-    change = rand(J) < ξ1
+    change = rand(J) .< ξ1
     prob = max.(zeros(N), NWb[:,t-1])
-    prob /= sum(prob)
+    if prob[end]==0.0
+        change .= false
+    else
+        prob /= sum(prob)
+    end
     for j=1:J
         ΔMh_sum = NLh[j,t]-sum(pe[os,t-1].*Δeh[os,j,t])+sum(ΔLh[j,:,t])
         last_n = 0
@@ -291,23 +295,27 @@ function ΔMh_and_Mh_func(t)
                 break
             end
         end
-        if change
-            n = sample(1:N, Weights(prob))
-            Mh[n,j,t] = Mh[last_n,j,t-1] + ΔMh_sum
-            ΔMh[n,j,t] = Mh[last_n,j,t-1] + ΔMh_sum
+        if change[j]
+            new_n = sample(1:N, Weights(prob))
+            Mh[new_n,j,t] = Mh[last_n,j,t-1] + ΔMh_sum
+            ΔMh[new_n,j,t] = Mh[last_n,j,t-1] + ΔMh_sum
             ΔMh[last_n,j,t] = -Mh[last_n,j,t-1]
         else
-            Mh[n,j,t] = Mh[n,j,t-1] + ΔMh_sum
-            ΔMh[n,j,t] = ΔMh_sum
+            Mh[last_n,j,t] = Mh[last_n,j,t-1] + ΔMh_sum
+            ΔMh[last_n,j,t] = ΔMh_sum
         end
     end
 end
 
 function ΔMf_and_Mf_func(t)
     global ΔMf, Mf
-    change = rand(O) < ξ2
+    change = rand(O) .< ξ2
     prob = max.(zeros(N), NWb[:,t-1])
-    prob /= sum(prob)
+    if prob[end]==0.0
+        change .= false
+    else
+        prob /= sum(prob)
+    end
     for o=1:O
         ΔMf_sum = NLf[o,t]+sum(ΔLf[o,:,t])+sum(pe[os,t-1].*Δe[os,t])
         last_n = 0
@@ -317,14 +325,14 @@ function ΔMf_and_Mf_func(t)
                 break
             end
         end
-        if change
-            n = sample(1:N, Weights(prob))
-            Mf[n,o,t] = Mf[last_n,o,t-1] + ΔMf_sum
-            ΔMf[n,o,t] = Mf[last_n,o,t-1] + ΔMf_sum
+        if change[o]
+            new_n = sample(1:N, Weights(prob))
+            Mf[new_n,o,t] = Mf[last_n,o,t-1] + ΔMf_sum
+            ΔMf[new_n,o,t] = Mf[last_n,o,t-1] + ΔMf_sum
             ΔMf[last_n,o,t] = -Mf[last_n,o,t-1]
         else
-            Mf[n,o,t] = Mf[n,o,t-1] + ΔMf_sum
-            ΔMf[n,o,t] = ΔMf_sum
+            Mf[last_n,o,t] = Mf[last_n,o,t-1] + ΔMf_sum
+            ΔMf[last_n,o,t] = ΔMf_sum
         end
     end
 end
@@ -473,6 +481,7 @@ function one_season(TIMERANGE)
         e[os,t] = e[os,t-1] + Δe[os,t]
         household_portfolio_func(t)
         f[:,t] = f[:,t-1]
+        F[:,t] = F[:,t-1]
 		pf[:,t] = dropdims(sum(Fh[:,:,t], dims=2);dims=2)./sum(f[:,t])
         for j=1:J
             fh[:,j,t] = Fh[:,j,t]./pf[:,t]
@@ -495,7 +504,7 @@ function one_season(TIMERANGE)
         H[:,t] = H[:,t-1] + ΔH[:,t]
         NWh[:,t] = dropdims(sum(Mh[:,:,t], dims=1);dims=1)-dropdims(sum(Lh[:,:,t], dims=2);dims=2)+dropdims(sum(Eh[os,:,t], dims=1);dims=1)
         NWf[os,t] = K[os,t]+dropdims(sum(Mf[:,os,t], dims=1);dims=1)+dropdims(sum(Lf[os,:,t], dims=2);dims=2)-E[os,t]
-        NWb[:,t] = -M[:,t]+L[:,t]+dropdims(sum(Eb[os,:,t], dims=1);dims=1)+H[:,t]
+        NWb[:,t] = -M[:,t]+L[:,t]+dropdims(sum(Eb[os,:,t], dims=1);dims=1)-F[:,t]+H[:,t]
         NWg[t] = sum(H[:,t])
         DE[t] = -sum(E[os,t])+sum(Eh[os,:,t])+sum(Eb[os,:,t])
         DF[t] = sum(Fh[:,:,t])-sum(F[:,t])
@@ -514,6 +523,10 @@ function initialise()
     global Lh, Lf, L
     global K, k, p, H
     global NWh, NWf, NWb, NWg, NW
+
+    for _=1:10
+        G_func(1)
+    end
 
     lstj, lsto, lstn = zeros(J), zeros(O), zeros(N)
     lstj[1], lsto[1], lstn[1] = 1.0, 1.0, 1.0
@@ -560,20 +573,21 @@ function initialise()
     end
     M[:,1] = sum(Mh[:,:,1],dims=2)+sum(Mf[:,:,1],dims=2)
     #* 借入金貸借ネットワーク
-    for j=1:J
+    """for j=1:J
         Lh[j,:,1] = shuffle(lstn)
     end
     for o=1:O
         Lf[o,:,1] = shuffle(lstn)
     end
-    L[:,1] = sum(Lh[:,:,1],dims=1)+sum(Lf[:,:,1],dims=1)
+    L[:,1] = sum(Lh[:,:,1],dims=1)+sum(Lf[:,:,1],dims=1)"""
     #* 初期資本と初期価格
     k[os,1] .= J/O
     p[os,1] .= 0.0
     K[os,1] = p[os,1].*k[os,1]
     A[os,1] .= 1.0
     #* 現金ネットワーク
-    H[:,1] .= 1.0
+    H[:,1] .= dropdims(sum(Mh[:,:,1],dims=2);dims=2) + dropdims(sum(Mf[:,:,1],dims=2);dims=2)
+                -dropdims(sum(Lh[:,:,1],dims=1);dims=1) - dropdims(sum(Lf[:,:,1],dims=1);dims=1)
     #* ストックの整合性を保証
     NWh[:,1] = dropdims(sum(Mh[:,:,1],dims=1); dims=1)-dropdims(sum(Lh[:,:,1],dims=2);dims=2)+dropdims(sum(Eh[:,:,1],dims=1);dims=1)+dropdims(sum(Fh[:,:,1],dims=1);dims=1)
     NWf[os,1] = K[os,1]+dropdims(sum(Mf[:,os,1],dims=1);dims=1)-dropdims(sum(Lf[os,:,1],dims=2),dims=2)-E[os,1]
@@ -581,11 +595,8 @@ function initialise()
     NWg[1] = -sum(H[:,1])
     NW[1] = sum(K[:,1])
 end
-initialise()
 
-for _=1:10
-	G_func(1)
-end
+initialise()
 
 
 # シミュレーション
