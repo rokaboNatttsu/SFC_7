@@ -1,12 +1,14 @@
+- [バグ](#バグ)
 - [1. エージェント番号](#1-エージェント番号)
 - [2. モデルの式とアルゴリズム](#2-モデルの式とアルゴリズム)
 - [拡張の方向性](#拡張の方向性)
   - [アルゴリズム](#アルゴリズム)
   - [行動の仮定](#行動の仮定)
 
+jlファイルの変更をこちらに反映させる作業をまだ行っていない
 
-
-AB_simulatio,n.jlで実装する
+# バグ
+- ストックの整合性が取れていない
 
 # 1. エージェント番号
 |      | インデックス | 総数 |
@@ -18,7 +20,7 @@ AB_simulatio,n.jlで実装する
 変数の右上につけて、どのエージェントとどのエージェントの取引もしくは貸借関係なのかを区別する
 
 # 2. モデルの式とアルゴリズム
-- $p^o=\frac{(1+\nu_1)(\sum_j W_{-1}^{j,o}+T_{v-1}^o+T_{c-1}^o+\delta k_{-1}^o)}{u^T\gamma_1 k_{-1}^o} + \nu_2(\overline{p}_{-1}-p_{-1}^o)$
+- $p^o=\frac{(1+\nu_1)(\sum_j W_{-1}^{j,o}+T_{v-1}^o+T_{c-1}^o+\delta k_{-1}^o)}{u^T\gamma_1 k_{-1}^o} + \nu_2(\lambda_5 \overline{p}_{-1}+\lambda_5 p_{-1}^o)$
   - マークアップ率は価格競争と投資資金回収率を主な引数とする関数で書かれるのでは？
   - 収穫逓増の効果を入れるべき？入れるとしたらどうやって？
 - 就業・失業判定、賃金率と賃金の決定のアルゴリズム
@@ -119,7 +121,7 @@ AB_simulatio,n.jlで実装する
 - $NW_h^j=\sum_n M_h^{n,j}-\sum_n L_h^{j,n}+\sum_o E_h^{o,j}$
 - $NW_f^o=K^o+\sum_n M_f^{n,o}-\sum_n L_f^{o,n}-E^o$
 - $NW_b^n=-M^n+L^n+\sum_o E_b^{o,n}+H^n$
-- $NW_g=\sum_n H^n$
+- $NW_g=-\sum_n H^n$
 - $D_E=-\sum_o E^o+\sum_o\sum_j E_h^{o,j}+\sum_o\sum_j E_b^{o,j}$
 - $D_F=\sum_j\sum_n F_h^{j,n}-\sum_n F^n$
 - $NW=\sum_j NW_h^j+\sum_o NW_f+\sum_n NW_b+NW_g$

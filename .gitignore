@@ -1,3 +1,4 @@
 .vscode
 .ipynb_checkpoints
 AB_model/test.jl
+AB_model/figs/*.png

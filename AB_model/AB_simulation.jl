@@ -2,7 +2,7 @@ using StatsPlots
 using StatsBase
 using Random
 
-J, O, N, TIME,  = 20, 5, 2, 10
+J, O, N, TIME,  = 20, 5, 2, 4
 OBuffer = 50
 Oin = 1
 
@@ -31,13 +31,14 @@ os = [o for o=1:O]
 rL = 0.02
 G0 = 1.0*O
 uT = 0.8
+c_base = 0.1
 
 α1, α2, α3, α4 = 0.8, 0.02, 2.0, 0.01
-β1, β2, β3, β4 = 0.02, 0.02, 0.2, 0.0 # β1, β2, β3, β4 = 0.02, 0.02, 0.2, 2.0
+β1, β2, β3, β4 = 0.02, 0.01, 0.2, 1.5 # 0.02, 0.02, 0.2, 2.0
 γ1, γ2 = 1.0, 0.02
 δ = 0.05
 ϵ1, ϵ2 = 1.0, 1.0
-λ1, λ2, λ3, λ4 = 0.3, 1.0, 0.5, 5.0
+λ1, λ2, λ3, λ4, λ5, λ6, λ7 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1
 τ1, τ2, τ3, τ4 = 0.3, 0.02, 0.1, 0.2
 μ1, μ2 = 0.0, 0.1
 ν1, ν2 = 0.3, 0.5
@@ -52,9 +53,12 @@ uT = 0.8
 function G_func(t)
     global G, G_calc_item, G_potential
     Gsum = G0*(1+β1)^(t-1)
-    G_calc_item .*= 1.0 .+ β2*(-1.0 .+ β3*randn(O))
+    G_calc_item .*= 1.0 .- β2 .+ β3*randn(O)
     G_calc_item = max.(1.0, G_calc_item)
     G_potential = max.(0.0, G_calc_item .- β4)
+    if sum(G_potential)==0.0
+        G_potential[sample(1:O)] = 1.0
+    end
     G[os,t] = G_potential.*Gsum/sum(G_potential)
 end
 
@@ -66,15 +70,15 @@ function c_func(t)
         if q==1
             r[1] = sum(c[1,:,t-1])+α4*(sum(c[os,:,t-1])+sum(g[os,t-1]))/J
         else
-            r[o] = sum(c[o,:,t-1])+α4*(sum(c[os,:,t-1])+sum(g[os,t-1]))/J + r[o-1]
+            r[q] = sum(c[o,:,t-1])+α4*(sum(c[os,:,t-1])+sum(g[os,t-1]))/J + r[q-1]
         end
     end
     r /= r[end]
     # 消費額を計算
     Cs = α1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)-Ta[:,t]-Ti[:,t]-rL*dropdims(sum(Lh[:,:,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2)) 
         +α2*(dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
-    Cs = max.(Cs, 0.0)
-        # 消費先の企業を選ぶ
+    Cs = max.(Cs, c_base*mean(p[os,t]))
+    # 消費先の企業を選ぶ
     for j=1:J
         # 前期の消費先の特定
         last_o = findall(x -> x > 0.0, c[:,j,t-1])[1]
@@ -90,13 +94,6 @@ function c_func(t)
         else # 前回と同じ消費先を選ぶ場合
             c[last_o,j,t] = Cs[j]/p[last_o,t]
         end
-    end
-end
-
-function v_calc(t)
-    global v
-    for o in os
-        v[o,t] = (u[o,t]*k[o,t])./(A[o,t]*sum(W[:,o,t].>0))
     end
 end
 
@@ -171,7 +168,7 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
             setdiff!(UE, [j])
             EMP[j,t] = o
             w[j,t] = w[j,t-1]*(1+ζ2*abs(randn()))
-            if EMP[j,t-1] > 0
+            if (EMP[j,t-1] > 0) & (EMP[j,t-1] in os)
                 W[j,EMP[j,t-1],t] = v[EMP[j,t-1]]*w[j,t-1]
             end
         end
@@ -200,14 +197,14 @@ end
 function ΔLf_and_Lf_func(t)
     global ΔLf, Lf
     ΔLfs = max.(-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2), (λ3.+λ4*((P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)).-rL)).*(I[os,t]+dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)))
-    for o in os
+    for (q,o) in enumerate(os)
         nLf, nMf = findfirst(x -> x > 0.0, Lf[o,:,t-1]), findfirst(x -> x > 0.0, Mf[:,o,t-1])
-        if (nLf == nMf) | (nLf==nothing)
-            Lf[o,nMf,t] = Lf[o,nMf,t-1] + ΔLfs[o]
-            ΔLf[o,nMf,t] = ΔLfs[o]
+        if (nLf == nMf) | (nLf == nothing)
+            Lf[o,nMf,t] = Lf[o,nMf,t-1] + ΔLfs[q]
+            ΔLf[o,nMf,t] = ΔLfs[q]
         else
-            Lf[o,nMf,t] = Lf[o,nLf,t-1] + ΔLfs[o]
-            ΔLf[o,nMf,t] = Lf[o,nLf,t-1] + ΔLfs[o]
+            Lf[o,nMf,t] = Lf[o,nLf,t-1] + ΔLfs[q]
+            ΔLf[o,nMf,t] = Lf[o,nLf,t-1] + ΔLfs[q]
             ΔLf[o,nLf,t] = -Lf[o,nLf,t-1]
         end
     end
@@ -218,8 +215,12 @@ function household_portfolio_func(t)
     # 金融資産額の推定
     Vs = dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Eh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Fh[:,:,t-1], dims=1);dims=1)+NLh[:,t]
     # ポートフォリオ配分先の確率の重みの共通部分を計算
-    index = ψ1*(Pf[os,t] - I[os,t])+ψ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))+ψ3*(P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2))
-    append!(index, ψ1*(rL.*L[:,t-1]+dropdims(sum(Pb[:,os,t], dims=2);dims=2))+ψ3*dropdims(sum(S[:,:,t], dims=1);dims=1)./dropdims(sum(Fh[:,:,t-1], dims=2);dims=2))
+    index = ψ1*(Pf[os,t] - I[os,t])
+            +ψ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))
+            +ψ3*(P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2))
+    append!(index, 
+            ψ1*(rL.*L[:,t-1]+dropdims(sum(Pb[:,os,t], dims=2);dims=2))
+            +ψ3*dropdims(sum(S[:,:,t], dims=1);dims=1)./dropdims(sum(Fh[:,:,t-1], dims=2);dims=2))
     index = max.(zeros(O+N), index)
     index /= sum(index)
     # ポートフォリオ配分先の数Int64(x[j])を決めるための準備。
@@ -271,9 +272,9 @@ function Eb_func(t)
         prob = index.*abs.(1.0.+0.1*randn(O)) + Eb[os,n,t-1]/(sum(Eb[os,n,t-1]))
         prob /= sum(prob)
         # 収益率から、保有する株式の総額目標を決定
-        E_volume = L[n,t-1]*(1.0 .+ λ2*(sum(Pb[n,os,t])/sum(Eb[os,n,t-1]).-rL))
+        EF_volume = (sum(Eb[os,n,t-1])+NLb[n,t])*(1.0-rL.+λ6*(sum(Pb[n,os,t])/sum(Eb[os,n,t-1]).-rL))
         # ポートフォリオ決定
-        Eb[os,n,t] = E_volume*prob
+        Eb[os,n,t] = EF_volume*prob
     end
 end
 
@@ -316,8 +317,8 @@ function ΔMf_and_Mf_func(t)
     else
         prob /= sum(prob)
     end
-    for o=1:O
-        ΔMf_sum = NLf[o,t]+sum(ΔLf[o,:,t])+sum(pe[os,t-1].*Δe[os,t])
+    for (x, o) in enumerate(os)
+        ΔMf_sum = NLf[o,t]+sum(ΔLf[o,:,t])+sum(pe[o,t-1].*Δe[o,t])
         last_n = 0
         for n=1:N
             if Mf[n,o,t-1] > 0.0
@@ -325,7 +326,7 @@ function ΔMf_and_Mf_func(t)
                 break
             end
         end
-        if change[o]
+        if change[x]
             new_n = sample(1:N, Weights(prob))
             Mf[new_n,o,t] = Mf[last_n,o,t-1] + ΔMf_sum
             ΔMf[new_n,o,t] = Mf[last_n,o,t-1] + ΔMf_sum
@@ -339,7 +340,6 @@ end
 
 function insolvency_disposition(t)
     global os, EMP, G_calc_item, G_potential, O
-    EMP = zeros(Int64, J,TIME)
 
     q = 1
     while length(os) >= q
@@ -348,7 +348,7 @@ function insolvency_disposition(t)
             setdiff!(os, o)
             deleteat!(G_calc_item, q)
             deleteat!(G_potential, q)
-            EMP[EMP==o, t] = 0
+            EMP[EMP[:,t-1].==o, t] .= 0
             O -= 1
         else
             q += 1
@@ -357,7 +357,7 @@ function insolvency_disposition(t)
 end
 
 function flotation(t) # 起業
-    global os, G_calc_item, G_potential, O
+    global os, G_calc_item, G_potential, O, A
     global Mh, Mf, ΔMh, ΔMf
     global e, eh, Δe, Δeh, E, Eh
     global NWh, NWf
@@ -440,7 +440,7 @@ function one_season(TIMERANGE)
 
     for t=TIMERANGE
         flotation_info = flotation(t)
-        p[os,t] = (1+ν1).*(dropdims(sum(W[:,os,t-1], dims=1);dims=1)+Tv[os,t-1]+Tc[os,t-1]+δ*k[os,t-1])./(uT*γ1*k[os,t-1])+ν2*(mean(p[os,t-1]).-p[os,t-1])
+        p[os,t] = ν2*(1+ν1).*(dropdims(sum(W[:,os,t-1], dims=1);dims=1)+Tv[os,t-1]+Tc[os,t-1]+δ*k[os,t-1])./(uT*γ1*k[os,t-1])+(1-ν2)*(λ5*mean(p[os,t-1]).+(1-λ5)*p[os,t-1])
         w_and_W_func(t, flotation_info)
         Ti[:,t] = τ1*(dropdims(sum(W[:,:,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2))
         Ta[:,t] = τ2*(dropdims(sum(Eh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
@@ -476,7 +476,7 @@ function one_season(TIMERANGE)
         ΔLf_and_Lf_func(t)
         L[:,t] = dropdims(sum(Lh[:,:,t], dims=1);dims=1) + dropdims(sum(Lf[os,:,t], dims=1);dims=1)
         ΔL[:,t] = L[:,t] - L[:,t-1]
-        Δe[os,t] = 1/p[os,t-1]*(1-λ3.-λ4*((P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)).-rL)).*(I[os,t]+dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1))
+        Δe[os,t] = max.(-λ7*e[os,t-1], 1/p[os,t-1]*(1-λ3.-λ4*((P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)).-rL)).*(I[os,t]+dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)))
         E[os,t] = E[os,t-1] + pe[os,t-1].*Δe[os,t]
         e[os,t] = e[os,t-1] + Δe[os,t]
         household_portfolio_func(t)
@@ -502,16 +502,21 @@ function one_season(TIMERANGE)
         ΔM[:,t] = M[:,t] - M[:,t-1]
         ΔH[:,t] = NLb[:,t]-[sum(pe[os,t].*Δeb[os,n,t]) for n=1:N]+ΔM[:,t]-ΔL[:,t]
         H[:,t] = H[:,t-1] + ΔH[:,t]
-        NWh[:,t] = dropdims(sum(Mh[:,:,t], dims=1);dims=1)-dropdims(sum(Lh[:,:,t], dims=2);dims=2)+dropdims(sum(Eh[os,:,t], dims=1);dims=1)
+        NWh[:,t] = dropdims(sum(Mh[:,:,t], dims=1);dims=1)-dropdims(sum(Lh[:,:,t], dims=2);dims=2)+dropdims(sum(Eh[os,:,t], dims=1);dims=1)+dropdims(sum(Fh[:,:,t], dims=1);dims=1)
         NWf[os,t] = K[os,t]+dropdims(sum(Mf[:,os,t], dims=1);dims=1)+dropdims(sum(Lf[os,:,t], dims=2);dims=2)-E[os,t]
         NWb[:,t] = -M[:,t]+L[:,t]+dropdims(sum(Eb[os,:,t], dims=1);dims=1)-F[:,t]+H[:,t]
-        NWg[t] = sum(H[:,t])
+        NWg[t] = -sum(H[:,t])
+        NW[t] = sum(NWh[:,t])+sum(NWf[os,t])+sum(NWb[:,t])+NWg[t]
         DE[t] = -sum(E[os,t])+sum(Eh[os,:,t])+sum(Eb[os,:,t])
         DF[t] = sum(Fh[:,:,t])-sum(F[:,t])
         
-        v_calc(t)   # 労働稼働率の計算
+        for o in os
+            v[o,t] = (u[o,t]*k[o,t])./(A[o,t]*sum(EMP[:,t].==o))
+        end
         insolvency_disposition(t)# 倒産処理
-        
+        println("sum(",sum(NLh[:,t]),", ",sum(NLf[os,t]),", ",sum(NLb[:,t]),", ",NLg[t],")=",sum(NLh[:,t])+sum(NLf[:,t])+sum(NLb[:,t])+sum(NLg[t]))
+        println(sum(NWh[:,t]),", ",sum(NWf[os,t]),", ",sum(NWb[:,t]),", ",NWg[t],", ",NW[t])
+        println(sum(K[os,t])+DE[t]+DF[t]-NW[t])
     end
 end
 
@@ -566,7 +571,7 @@ function initialise()
     pf[:,1] = F[:,1]./f[:,1]
     #* 預金貸借ネットワーク
     for j=1:J
-        Mh[:,j,1] = shuffle(lstn)
+        Mh[:,j,1] = shuffle(10.0.*lstn)
     end
     for o in os
         Mf[:,o,1] = shuffle(lstn)
@@ -603,3 +608,15 @@ initialise()
 one_season(2:TIME)
 
 # プロット
+plot(dropdims(sum(NLh[:,:],dims=1);dims=1), label="NLh")
+plot!(dropdims(sum(NLf[:,:],dims=1);dims=1), label="NLf")
+plot!(dropdims(sum(NLb[:,:],dims=1);dims=1), label="NLb")
+plot!(NLg, label="NLg")
+savefig("AB_model/figs/NL_sum.png")
+
+plot(dropdims(sum(NWh[:,:],dims=1);dims=1), label="NWh")
+plot!(dropdims(sum(NWf[:,:],dims=1);dims=1), label="NWf")
+plot!(dropdims(sum(NWb[:,:],dims=1);dims=1), label="NWb")
+plot!(NWg, label="NWg")
+plot!(NW, label="NW")
+savefig("AB_model/figs/NW_sum.png")
