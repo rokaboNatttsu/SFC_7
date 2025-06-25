@@ -288,7 +288,7 @@ function ΔMh_and_Mh_func(t)
         prob /= sum(prob)
     end
     for j=1:J
-        ΔMh_sum = NLh[j,t]-sum(pe[os,t-1].*Δeh[os,j,t])+sum(ΔLh[j,:,t])
+        ΔMh_sum = NLh[j,t]-sum(pe[os,t-1].*Δeh[os,j,t])-sum(pf[:,t-1].*Δfh[:,j,t])+sum(ΔLh[j,:,t])
         last_n = 0
         for n=1:N
             if Mh[n,j,t-1] > 0.0
@@ -620,3 +620,12 @@ plot!(dropdims(sum(NWb[:,:],dims=1);dims=1), label="NWb")
 plot!(NWg, label="NWg")
 plot!(NW, label="NW")
 savefig("AB_model/figs/NW_sum.png")
+
+plot(
+    dropdims(sum(NLh[:,2:4],dims=1);dims=1)
+    -dropdims(sum(pe[:,1:3].*dropdims(sum(Δeh[:,:,2:4],dims=2);dims=2),dims=1);dims=1)
+    -dropdims(sum(pf[:,1:3].*dropdims(sum(Δfh[:,:,2:4],dims=2);dims=2),dims=1);dims=1)
+    -dropdims(sum(dropdims(sum(ΔMh[:,:,2:4],dims=2);dims=2),dims=1);dims=1)
+    +dropdims(sum(dropdims(sum(ΔLh[:,:,2:4],dims=2);dims=2),dims=1);dims=1)
+)
+savefig("AB_model/figs/tmp1.png")

@@ -26,8 +26,7 @@
 | 企業利潤       |        $+\sum_l\sum_o P_h^{l,o}$         |           $-\sum_o P^o$           |         $+\sum_o P_f^o$          |         $+\sum_n\sum_o P_b^{n,o}$          |                      |   $0$   |
 | 銀行配当       |         $+\sum_l\sum_n S^{l,n}$          |                                   |                                  |          $-\sum_l\sum_n S^{l,n}$           |                      |   $0$   |
 | [ 純貸出 ]     |           [ $\sum_l NL_h^l$ ]            |                                   |       [ $\sum_o NL_f^o$ ]        |            [ $\sum_n NL_b^n$ ]             |      [ $NL_g$ ]      | [ $0$ ] |
-| 企業株式純発行 |                   $0$                    |                                   |  $+\sum_o p_{e-1}^o \Delta e^o$  | $-\sum_n\sum_o p_{e-1}^o \Delta e_b^{o,n}$ |                      |   $0$   |
-| 銀行株式純発行 | $-\sum_l\sum_n p_{f-1}^n \Delta f^{n,l}$ |                                   |                                  |                                            |                      |   $0$   |
+| 企業株式純発行 |                   $-\sum_l\sum_o p_{e-1}^o \Delta e^{o,l}$                    |                                   |  $+\sum_o p_{e-1}^o \Delta e^o$  | $-\sum_n\sum_o p_{e-1}^o \Delta e_b^{o,n}$ |                      |   $0$   |
 | 預金の移動     |     $-\sum_l\sum_n \Delta M_h^{n,l}$     |                                   | $-\sum_o\sum_n \Delta M_f^{n,o}$ |            $+\sum_n \Delta M^n$            |                      |   $0$   |
 | 貸付金の移動   |     $+\sum_l\sum_n \Delta L_h^{l,n}$     |                                   | $+\sum_o\sum_n \Delta L_f^{o,n}$ |            $-\sum_n \Delta L^n$            |                      |   $0$   |
 | 現金の移動     |                                          |                                   |                                  |            $-\sum_n \Delta H^n$            | $+\sum_n \Delta H^n$ |   $0$   |
@@ -55,7 +54,7 @@
 | 貸付金の増減             |     $-\sum_l\sum_n \Delta L_h^{l,n}$     | $-\sum_o\sum_n \Delta L_h^{o,n}$ |           $+\sum_n \Delta L^n$           |                      |                   $0$                   |
 | 企業株式キャピタルゲイン | $+\sum_l\sum_o \Delta p_e e_{h-1}^{o,l}$ |                                  | $+\sum_n\sum_o \Delta p_e e_{b-1}^{o,n}$ |                      |      $+\sum_n \Delta p_e e_{-1}^n$      |
 | 企業株式純発行           |   $+\sum_l\sum_o p_e \Delta e_h^{o,l}$   |     $+\sum_o p_e \Delta e^o$     |   $+\sum_n\sum_o p_e \Delta e_b^{o,n}$   |                      |                   $0$                   |
-| 銀行株式キャピタルゲイン | $+\sum_l\sum_n \Delta p_f f_{-1}^{n,l}$  |                                  |                                          |                      | $+\sum_l\sum_n \Delta p_f f_{-1}^{n,l}$ |
+| 銀行株式キャピタルゲイン | $+\sum_l\sum_n \Delta p_f f_{h-1}^{n,l}$  |                                  |                                          |                      | $+\sum_l\sum_n \Delta p_f f_{-1}^{n,l}$ |
 | 現金の増減               |                                          |                                  |           $+\sum_n \Delta H^n$           | $-\sum_n \Delta H^n$ |                   $0$                   |
 | 純資産                   |             $-\sum_l NW_h^l$             |         $-\sum_o NW_f^o$         |             $-\sum_n NW_b^n$             |       $-NW_g$        |                  $-NW$                  |
 
@@ -80,7 +79,7 @@
 | 銀行配当                                               |          $+\sum_n S^{l,n}$           |                             |                            |          $-\sum_l S^{l,n}$           |                      |
 | [ 純貸出 ]                                             |             [ $NL_h^l$ ]             |                             |        [ $NL_f^o$ ]        |             [ $NL_b^n$ ]             |      [ $NL_g$ ]      |
 | 企業株式純発行                                         | $-\sum_o p_{e-1}^o \Delta e_h^{o,l}$ |                             |  $+p_{e-1}^o \Delta e^o$   | $-\sum_o p_{e-1}^o \Delta e_b^{o,n}$ |                      |
-| 銀行株式保有量増減 | $-\sum_n p_{f-1}^n \Delta f^{n,l}$ |                                      |                             |                            |                                      |                      |
+| 銀行株式保有量増減 | $-\sum_n p_{f-1}^n \Delta f_h^{n,l}$ |                                      |                             |                            |                                      |                      |
 | 預金の移動                                             |      $-\sum_n \Delta M_h^{n,l}$      |                             | $-\sum_n \Delta M_f^{n,o}$ |            $+\Delta M^n$             |                      |
 | 貸付金の移動                                           |      $+\sum_n \Delta L_h^{l,n}$      |                             | $+\sum_n \Delta L_f^{o,n}$ |            $-\Delta L^n$             |                      |
 | 現金の移動                                             |                                      |                             |                            |            $-\Delta H^n$             | $+\sum_n \Delta H^n$ |
@@ -93,7 +92,7 @@
 | 預金     | $+\sum_n M_h^{n,l}$ | $+\sum_n M_f^{n,o}$ |       $-M^n$        |               |
 | 貸付金   | $-\sum_n L_h^{l,n}$ | $-\sum_n L_f^{o,n}$ |       $+L^n$        |               |
 | 企業株式 | $+\sum_o E_h^{o,l}$ |       $-E^o$        | $+\sum_o E_b^{o,n}$ |               |
-| 銀行株式 |  $+\sum_o F^{n,l}$  |                     |       $-F^n$        |               |
+| 銀行株式 |  $+\sum_n F_h^{n,l}$  |                     |       $-F^n$        |               |
 | 現金     |                     |                     |       $+H^n$        | $-\sum_n H^n$ |
 | 純資産   |      $-NW_h^l$      |      $-NW_f^o$      |      $-NW_b^n$      |    $-NW_g$    |
 | 合計     |         $0$         |         $0$         |         $0$         |      $0$      |
@@ -108,8 +107,8 @@
 | 貸付金                   |     $-\sum_n \Delta L_h^{l,n}$     | $-\sum_n \Delta L_h^{o,n}$ |           $+\Delta L^n$            |                      |
 | 企業株式キャピタルゲイン | $+\sum_o \Delta p_e e_{h-1}^{o,l}$ |                            | $+\sum_o \Delta p_e e_{b-1}^{o,n}$ |                      |
 | 企業株式売買           |   $+\sum_o p_e \Delta e_h^{o,l}$   |     $-p_e \Delta e^o$      |   $+\sum_o p_e \Delta e_b^{o,n}$   |                      |
-| 銀行株式キャピタルゲイン | $+\sum_n \Delta p_f f_{-1}^{n,l}$  |                            |                                    |                      |
-| 銀行株式売買           |    $+\sum_n p_f \Delta f^{n,l}$    |                            |        |                      |
+| 銀行株式キャピタルゲイン | $+\sum_n \Delta p_f f_{h-1}^{n,l}$  |                            |                                    |                      |
+| 銀行株式売買           |    $+\sum_n p_f \Delta f_h^{n,l}$    |                            |        |                      |
 | 現金の増減               |                                    |                            |        $+\sum_n \Delta H^n$        | $-\sum_n \Delta H^n$ |
 | 期末純資産               |             $-NW_h^l$              |         $-NW_f^o$          |             $-NW_b^n$              |       $-NW_g$        |
 
