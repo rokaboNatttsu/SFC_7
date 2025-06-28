@@ -2,7 +2,7 @@ using StatsPlots
 using StatsBase
 using Random
 
-J, O, N, TIME,  = 20, 5, 2, 4
+J, O, N, TIME,  = 20, 5, 2, 7
 OBuffer = 50
 Oin = 1
 
@@ -26,7 +26,7 @@ u, v, A = zeros(OBuffer, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME)
 EMP = zeros(Int64, J,TIME)
 G_calc_item, G_potential = ones(O), ones(O)
 os = [o for o=1:O]
-
+last_os = [deepcopy(os)]
 
 rL = 0.02
 G0 = 1.0*O
@@ -38,7 +38,7 @@ c_base = 0.1
 γ1, γ2 = 1.0, 0.02
 δ = 0.05
 ϵ1, ϵ2 = 1.0, 1.0
-λ1, λ2, λ3, λ4, λ5, λ6, λ7 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1
+λ1, λ2, λ3, λ4, λ5, λ6, λ7, λ8 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3
 τ1, τ2, τ3, τ4 = 0.3, 0.02, 0.1, 0.2
 μ1, μ2 = 0.0, 0.1
 ν1, ν2 = 0.3, 0.5
@@ -183,7 +183,8 @@ end
 
 function Lh_func(t)
     global Lh
-    Lhs = max.(0.0, ϵ1*NLh[:,t] + ϵ2*dropdims(sum(C[os,:,t], dims=1);dims=1))
+    tmp = (dropdims(sum(C[:,:,t], dims=1);dims=1)+Ta[:,t]+Ti[:,t]+rL*dropdims(sum(Lh[:,:,t-1],dims=2);dims=2)) - dropdims(sum(Mh[:,:,t-1],dims=1);dims=1)
+    Lhs = max.(0.0, ϵ1*NLh[:,t] + ϵ2*dropdims(sum(C[os,:,t], dims=1);dims=1), dropdims(sum(Lh[:,:,t-1],dims=2);dims=2)+1.01*tmp)
     for j=1:J
         for n=1:N
             if Mh[n,j,t-1] > 0.0
@@ -213,7 +214,12 @@ end
 function household_portfolio_func(t)
     global Eh, Fh
     # 金融資産額の推定
-    Vs = dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Eh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Fh[:,:,t-1], dims=1);dims=1)+NLh[:,t]
+    Vs = max.(0.0, 
+            -dropdims(sum(Lh[:,:,t-1],dims=2);dims=2)
+            +dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)
+            +dropdims(sum(Eh[:,:,t-1], dims=1);dims=1)
+            +dropdims(sum(Fh[:,:,t-1], dims=1);dims=1)
+            +NLh[:,t])
     # ポートフォリオ配分先の確率の重みの共通部分を計算
     index = ψ1*(Pf[os,t] - I[os,t])
             +ψ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))
@@ -224,7 +230,7 @@ function household_portfolio_func(t)
     index = max.(zeros(O+N), index)
     index /= sum(index)
     # ポートフォリオ配分先の数Int64(x[j])を決めるための準備。
-    x = 0.5*Vs./mean(sum(C[os,:,t], dims=1))
+    x = max.(0.0, 1.0*(Vs.-1.0*mean(sum(C[os,:,t], dims=1)))./mean(sum(C[os,:,t], dims=1)))
     # 家計jのポートフォリオ計算
     for j=1:J
         lastEhFhSum = sum(Eh[os,j,t-1])+sum(Fh[:,j,t-1])
@@ -289,6 +295,7 @@ function ΔMh_and_Mh_func(t)
     end
     for j=1:J
         ΔMh_sum = NLh[j,t]-sum(pe[os,t-1].*Δeh[os,j,t])-sum(pf[:,t-1].*Δfh[:,j,t])+sum(ΔLh[j,:,t])
+        tmp1, tmp2, tmp3 = pe[os,t-1], Δeh[os,j,t], -sum(pe[os,t-1].*Δeh[os,j,t])
         last_n = 0
         for n=1:N
             if Mh[n,j,t-1] > 0.0
@@ -300,7 +307,7 @@ function ΔMh_and_Mh_func(t)
             new_n = sample(1:N, Weights(prob))
             Mh[new_n,j,t] = Mh[last_n,j,t-1] + ΔMh_sum
             ΔMh[new_n,j,t] = Mh[last_n,j,t-1] + ΔMh_sum
-            ΔMh[last_n,j,t] = -Mh[last_n,j,t-1]
+            ΔMh[last_n,j,t] -= Mh[last_n,j,t-1]
         else
             Mh[last_n,j,t] = Mh[last_n,j,t-1] + ΔMh_sum
             ΔMh[last_n,j,t] = ΔMh_sum
@@ -330,7 +337,7 @@ function ΔMf_and_Mf_func(t)
             new_n = sample(1:N, Weights(prob))
             Mf[new_n,o,t] = Mf[last_n,o,t-1] + ΔMf_sum
             ΔMf[new_n,o,t] = Mf[last_n,o,t-1] + ΔMf_sum
-            ΔMf[last_n,o,t] = -Mf[last_n,o,t-1]
+            ΔMf[last_n,o,t] -= Mf[last_n,o,t-1]
         else
             Mf[last_n,o,t] = Mf[last_n,o,t-1] + ΔMf_sum
             ΔMf[last_n,o,t] = ΔMf_sum
@@ -340,15 +347,22 @@ end
 
 function insolvency_disposition(t)
     global os, EMP, G_calc_item, G_potential, O
-
+    global ΔMf, ΔLf, Δe, Δeh, Δeb
     q = 1
     while length(os) >= q
         o = os[q]
-        if sum(Mf[:,o,t])<ϕ2*sum(Lf[o,:,t])
+        if (sum(Mf[:,o,t])<ϕ2*sum(Lf[o,:,t])) & (P[o,t]-I[o,t]<0.0)
             setdiff!(os, o)
             deleteat!(G_calc_item, q)
             deleteat!(G_potential, q)
-            EMP[EMP[:,t-1].==o, t] .= 0
+            EMP[EMP[:,t].==o, t] .= 0
+            if t<TIME
+                ΔMf[:,o,t+1] = -Mf[:,o,t]
+                ΔLf[o,:,t+1] = -Lf[o,:,t]
+                Δe[o,t+1] = -e[o,t]
+                Δeh[o,:,t+1] = -eh[o,:,t]
+                Δeb[o,:,t+1] = -eb[o,:,t]
+            end
             O -= 1
         else
             q += 1
@@ -437,15 +451,16 @@ function one_season(TIMERANGE)
     global fh, f, Δfh, Δf, Fh, F
     global H, ΔH
     global NWh, NWf, NWb, NWg, NW
+    global last_os
 
     for t=TIMERANGE
         flotation_info = flotation(t)
         p[os,t] = ν2*(1+ν1).*(dropdims(sum(W[:,os,t-1], dims=1);dims=1)+Tv[os,t-1]+Tc[os,t-1]+δ*k[os,t-1])./(uT*γ1*k[os,t-1])+(1-ν2)*(λ5*mean(p[os,t-1]).+(1-λ5)*p[os,t-1])
         w_and_W_func(t, flotation_info)
-        Ti[:,t] = τ1*(dropdims(sum(W[:,:,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2))
-        Ta[:,t] = τ2*(dropdims(sum(Eh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
-        Tv[:,t] = τ3*(dropdims(sum(C[:,:,t-1], dims=2);dims=2)+I[:,t-1]+G[:,t-1])
-        Tc[:,t] = τ4*(dropdims(sum(C[:,:,t-1], dims=2);dims=2)+G[:,t-1]+I[:,t-1]-dropdims(sum(W[:,:,t-1], dims=1);dims=1)-Tv[:,t-1])
+        Ti[:,t] = τ1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2))
+        Ta[:,t] = τ2*(dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)+dropdims(sum(Fh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
+        Tv[os,t] = τ3*(dropdims(sum(C[os,:,t-1], dims=2);dims=2)+I[os,t-1]+G[os,t-1])
+        Tc[os,t] = max.(0.0, τ4*(dropdims(sum(C[os,:,t-1], dims=2);dims=2)+G[os,t-1]+I[os,t-1]-dropdims(sum(W[:,os,t-1], dims=1);dims=1)-Tv[os,t-1]))
         G_func(t)
         g[os,t] = G[os,t]./p[os,t]
         c_func(t)
@@ -453,12 +468,12 @@ function one_season(TIMERANGE)
             C[o,:,t] = p[o,t]*c[o,:,t]
         end
         A[os,t] = A[os,t-1].*(1+μ1.+μ2*i[os,t-1]./k[os,t-1])
-        u[os,t] = (dropdims(sum(c[os,:,t], dims=2);dims=2)+i[os,t]+g[os,t])./(γ1*k[os,t-1])
-        i[os,t] = max.(0.0, δ*k[os,t-1]+(u[os,t].-uT).*γ1.*k[os,t-1]+γ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))./p[os,t])
+        i[os,t] = max.(0.0, δ*k[os,t-1]+(u[os,t-1].-uT).*γ1.*k[os,t-1]+γ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))./p[os,t])
         I[os,t] = p[os,t].*i[os,t]
+        u[os,t] = (dropdims(sum(c[os,:,t], dims=2);dims=2)+i[os,t]+g[os,t])./(γ1*k[os,t-1])
         k[os,t] = (1-δ).*k[os,t-1]+i[os,t]
         K[os,t] = p[os,t].*k[os,t]
-        P[os,t] = dropdims(sum(C[os,:,t], dims=2);dims=2)+G[os,t]+I[os,t]-dropdims(sum(W[:,os,t], dims=1);dims=1)-Tc[os,t]-Tv[os,t]-rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)
+        P[os,t] = dropdims(sum(C[os,:,t], dims=2);dims=2)+G[os,t]+I[os,t]-dropdims(sum(W[:,os,t], dims=1);dims=1)-Tv[os,t]-Tc[os,t]-rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)
         for o in os
             Ph[:,o,t] = max(0.0, θ1*(P[o,t]-I[o,t])+θ2*(sum(Mf[:,o,t-1])-sum(Lf[o,:,t-1]))).*eh[o,:,t-1]./e[o,t-1]
             Pb[:,o,t] = max(0.0, θ1*(P[o,t]-I[o,t])+θ2*(sum(Mf[:,o,t-1])-sum(Lf[o,:,t-1]))).*eb[o,:,t-1]./e[o,t-1]
@@ -467,25 +482,29 @@ function one_season(TIMERANGE)
         for n=1:N
             S[:,n,t] = (θ1*(rL*L[n,t-1]+sum(Pb[n,os,t]))+θ2*sum(Eb[os,n,t-1])).*fh[n,:,t-1]/f[n,t-1]
         end
+        println(sum(P[:,t])-sum(Ph[:,:,t])-sum(Pf[:,t])-sum(Pb[:,:,t]), " : profit consistency")
+        println(sum(L[:,t-1])-sum(Lh[:,:,t-1])-sum(Lf[:,:,t-1]), " : loan consistency")
         NLh[:,t] = -dropdims(sum(C[os,:,t], dims=1);dims=1) + dropdims(sum(W[:,os,t], dims=2);dims=2)-Ti[:,t]-Ta[:,t]-rL*dropdims(sum(Lh[:,:,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t], dims=2);dims=2)+dropdims(sum(S[:,:,t], dims=2);dims=2)
         NLf[os,t] = -I[os,t] + Pf[os,t]
         NLb[:,t] = rL*L[:,t-1] + dropdims(sum(Pb[:,os,t], dims=2);dims=2) - dropdims(sum(S[:,:,t], dims=1);dims=1)
-        NLg[t] = -sum(G[:,t])+sum(Ti[:,t])+sum(Ta[:,t])+sum(Tv[os,t])+sum(Tc[os,t])
+        NLg[t] = -sum(G[os,t])+sum(Ti[:,t])+sum(Ta[:,t])+sum(Tv[os,t])+sum(Tc[os,t])
+        println("### 1 ### sum(",sum(NLh[:,t]),", ",sum(NLf[os,t]),", ",sum(NLb[:,t]),", ",NLg[t],")=",sum(NLh[:,t])+sum(NLf[os,t])+sum(NLb[:,t])+sum(NLg[t]))
         Lh_func(t)
         ΔLh[:,:,t] = Lh[:,:,t] - Lh[:,:,t-1]
         ΔLf_and_Lf_func(t)
         L[:,t] = dropdims(sum(Lh[:,:,t], dims=1);dims=1) + dropdims(sum(Lf[os,:,t], dims=1);dims=1)
         ΔL[:,t] = L[:,t] - L[:,t-1]
-        Δe[os,t] = max.(-λ7*e[os,t-1], 1/p[os,t-1]*(1-λ3.-λ4*((P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)).-rL)).*(I[os,t]+dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)))
+        Δe[os,t] = min.(max.(-λ7*e[os,t-1], 1/p[os,t-1]*(1-λ3.-λ4*((P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)).-rL)).*(I[os,t]+dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1))), λ8*e[os,t-1])
         E[os,t] = E[os,t-1] + pe[os,t-1].*Δe[os,t]
         e[os,t] = e[os,t-1] + Δe[os,t]
         household_portfolio_func(t)
         f[:,t] = f[:,t-1]
         F[:,t] = F[:,t-1]
-		pf[:,t] = dropdims(sum(Fh[:,:,t], dims=2);dims=2)./sum(f[:,t])
+		pf[:,t] = dropdims(sum(Fh[:,:,t], dims=2);dims=2)./f[:,t]
         for j=1:J
             fh[:,j,t] = Fh[:,j,t]./pf[:,t]
         end
+        Δfh[:,:,t] = fh[:,:,t] .- fh[:,:,t-1]
         Eb_func(t)
         pe[os,t] = (dropdims(sum(Eh[os,:,t], dims=2);dims=2)+dropdims(sum(Eb[os,:,t], dims=2);dims=2))./e[os,t]
         for j=1:J
@@ -500,10 +519,10 @@ function one_season(TIMERANGE)
         ΔMf_and_Mf_func(t)
         M[:,t] = dropdims(sum(Mh[:,:,t], dims=2);dims=2)+dropdims(sum(Mf[:,os,t], dims=2);dims=2)
         ΔM[:,t] = M[:,t] - M[:,t-1]
-        ΔH[:,t] = NLb[:,t]-[sum(pe[os,t].*Δeb[os,n,t]) for n=1:N]+ΔM[:,t]-ΔL[:,t]
+        ΔH[:,t] = NLb[:,t]-[sum(pe[os,t-1].*Δeb[os,n,t]) for n=1:N]+ΔM[:,t]-ΔL[:,t]
         H[:,t] = H[:,t-1] + ΔH[:,t]
         NWh[:,t] = dropdims(sum(Mh[:,:,t], dims=1);dims=1)-dropdims(sum(Lh[:,:,t], dims=2);dims=2)+dropdims(sum(Eh[os,:,t], dims=1);dims=1)+dropdims(sum(Fh[:,:,t], dims=1);dims=1)
-        NWf[os,t] = K[os,t]+dropdims(sum(Mf[:,os,t], dims=1);dims=1)+dropdims(sum(Lf[os,:,t], dims=2);dims=2)-E[os,t]
+        NWf[os,t] = K[os,t]+dropdims(sum(Mf[:,os,t], dims=1);dims=1)-dropdims(sum(Lf[os,:,t], dims=2);dims=2)-E[os,t]
         NWb[:,t] = -M[:,t]+L[:,t]+dropdims(sum(Eb[os,:,t], dims=1);dims=1)-F[:,t]+H[:,t]
         NWg[t] = -sum(H[:,t])
         NW[t] = sum(NWh[:,t])+sum(NWf[os,t])+sum(NWb[:,t])+NWg[t]
@@ -513,10 +532,17 @@ function one_season(TIMERANGE)
         for o in os
             v[o,t] = (u[o,t]*k[o,t])./(A[o,t]*sum(EMP[:,t].==o))
         end
-        insolvency_disposition(t)# 倒産処理
-        println("sum(",sum(NLh[:,t]),", ",sum(NLf[os,t]),", ",sum(NLb[:,t]),", ",NLg[t],")=",sum(NLh[:,t])+sum(NLf[:,t])+sum(NLb[:,t])+sum(NLg[t]))
+        
+        println("sum(",sum(NLh[:,t]),", ",sum(NLf[os,t]),", ",sum(NLb[:,t]),", ",NLg[t],")=",sum(NLh[:,t])+sum(NLf[os,t])+sum(NLb[:,t])+sum(NLg[t]))
+        println("h^j flow consistency : ",NLh[1,t]-sum(pe[:,t-1].*Δeh[:,1,t])-sum(pf[:,t-1].*Δfh[:,1,t])+sum(ΔLh[1,:,t])-sum(ΔMh[:,1,t]))
+        println("f^o flow consistency : ",NLf[os[1],t]+pe[os[1],t-1]*Δe[os[1],t]+sum(ΔLf[os[1],:,t])-sum(ΔMf[:,os[1],t]))
+        println("b^n flow consistency : ",NLb[1,t]-sum(pe[:,t-1].*Δeb[:,1,t])-ΔL[1,t]+ΔM[1,t]-ΔH[1,t])
+        println("g flow consistency : ",NLg[t]+sum(ΔH[:,t]))
         println(sum(NWh[:,t]),", ",sum(NWf[os,t]),", ",sum(NWb[:,t]),", ",NWg[t],", ",NW[t])
-        println(sum(K[os,t])+DE[t]+DF[t]-NW[t])
+        println(sum(K[os,t])+DE[t]+DF[t]-NW[t], " : stock consistency")
+
+        insolvency_disposition(t)# 倒産処理
+        push!(last_os, deepcopy(os))
     end
 end
 
@@ -621,11 +647,26 @@ plot!(NWg, label="NWg")
 plot!(NW, label="NW")
 savefig("AB_model/figs/NW_sum.png")
 
-plot(
-    dropdims(sum(NLh[:,2:4],dims=1);dims=1)
-    -dropdims(sum(pe[:,1:3].*dropdims(sum(Δeh[:,:,2:4],dims=2);dims=2),dims=1);dims=1)
-    -dropdims(sum(pf[:,1:3].*dropdims(sum(Δfh[:,:,2:4],dims=2);dims=2),dims=1);dims=1)
-    -dropdims(sum(dropdims(sum(ΔMh[:,:,2:4],dims=2);dims=2),dims=1);dims=1)
-    +dropdims(sum(dropdims(sum(ΔLh[:,:,2:4],dims=2);dims=2),dims=1);dims=1)
-)
-savefig("AB_model/figs/tmp1.png")
+println("###########",NLh[1,TIME]-sum(pe[:,TIME-1].*Δeh[:,1,TIME])-sum(pf[:,TIME-1].*Δfh[:,1,TIME])+sum(ΔLh[1,:,TIME])-sum(ΔMh[:,1,TIME]))
+println("###########",NLf[os[1],TIME]+pe[os[1],TIME-1]*Δe[os[1],TIME]+sum(ΔLf[os[1],:,TIME])-sum(ΔMf[:,os[1],TIME]))
+println("###########",NLb[1,TIME]-sum(pe[:,TIME-1].*Δeb[:,1,TIME])-ΔL[1,TIME]+ΔM[1,TIME]-ΔH[1,TIME])
+println("###########",NLg[TIME]+sum(ΔH[:,TIME]))
+println(sum([sum(pf[:,TIME-1].*Δfh[:,j,TIME]) for j=1:J]))
+println("%%%%%%%%%%%",sum(NLh[:,TIME])-sum([sum(pe[:,TIME-1].*Δeh[:,j,TIME]) for j=1:J])+sum(ΔLh[:,:,TIME])-sum(ΔMh[:,:,TIME]))
+println("%%%%%%%%%%%",sum(NLf[:,TIME])+sum(pe[:,TIME-1].*Δe[:,TIME])+sum(ΔLf[:,:,TIME])-sum(ΔMf[:,:,TIME]))
+println("%%%%%%%%%%%",sum(NLb[:,TIME])-sum([sum(pe[:,TIME-1].*Δeb[:,n,TIME]) for n=1:N])-sum(ΔL[:,TIME])+sum(ΔM[:,TIME])-sum(ΔH[:,TIME]))
+println("%%%%%%%%%%%",NLg[TIME]+sum(ΔH[:,TIME]))
+
+plot(2:TIME, dropdims(sum(NLh[:,2:TIME],dims=1);dims=1).+dropdims(sum(NLf[:,2:TIME],dims=1);dims=1).+dropdims(sum(NLb[:,2:TIME],dims=1);dims=1).+NLg[2:TIME])
+savefig("AB_model/figs/transaction_consistency.png")
+
+plot(2:TIME,[sum(NLh[:,t])-sum([sum(pe[:,t-1].*Δeh[:,j,t]) for j=1:J])-sum([sum(pf[:,t-1].*Δfh[:,j,t]) for j=1:J])-sum(ΔMh[:,:,t])+sum(ΔLh[:,:,t]) for t=2:TIME],label="h")
+plot!(2:TIME,[sum(NLf[:,t])+sum(pe[:,t-1].*Δe[:,t])+sum(ΔLf[:,:,t])-sum(ΔMf[:,:,t]) for t=2:TIME],label="f")
+plot!(2:TIME,[sum(NLb[:,t])-sum([sum(pe[:,t-1].*Δeb[:,n,t]) for n=1:N])-sum(ΔL[:,t])+sum(ΔM[:,t])-sum(ΔH[:,t]) for t=2:TIME],label="b")
+plot!(2:TIME,[NLg[t]+sum(ΔH[:,t]) for t=2:TIME],label="g")
+savefig("AB_model/figs/flow_consistency.png")
+
+plot(dropdims(sum(p[os,:],dims=1);dims=1),label="p_average")
+plot!(dropdims(sum(pe[os,:],dims=1);dims=1),label="pe_average")
+plot!(dropdims(sum(pf[:,:],dims=1);dims=1),label="pf_average")
+savefig("AB_model/figs/ps.png")
