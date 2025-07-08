@@ -26,7 +26,7 @@
 | 企業利潤       |        $+\sum_l\sum_o P_h^{l,o}$         |           $-\sum_o P^o$           |         $+\sum_o P_f^o$          |         $+\sum_n\sum_o P_b^{n,o}$          |                      |   $0$   |
 | 銀行配当       |         $+\sum_l\sum_n S^{l,n}$          |                                   |                                  |          $-\sum_l\sum_n S^{l,n}$           |                      |   $0$   |
 | [ 純貸出 ]     |           [ $\sum_l NL_h^l$ ]            |                                   |       [ $\sum_o NL_f^o$ ]        |            [ $\sum_n NL_b^n$ ]             |      [ $NL_g$ ]      | [ $0$ ] |
-| 企業株式純発行 |                   $-\sum_l\sum_o p_{e-1}^o \Delta e^{o,l}$                    |                                   |  $+\sum_o p_{e-1}^o \Delta e^o$  | $-\sum_n\sum_o p_{e-1}^o \Delta e_b^{o,n}$ |                      |   $0$   |
+| 企業株式純発行 |                   $-\sum_l\sum_o p_{e-1}^o \Delta e_h^{o,l}$                    |                                   |  $+\sum_o p_{e-1}^o \Delta e^o$  | $-\sum_n\sum_o p_{e-1}^o \Delta e_b^{o,n}$ |                      |   $0$   |
 | 預金の移動     |     $-\sum_l\sum_n \Delta M_h^{n,l}$     |                                   | $-\sum_o\sum_n \Delta M_f^{n,o}$ |            $+\sum_n \Delta M^n$            |                      |   $0$   |
 | 貸付金の移動   |     $+\sum_l\sum_n \Delta L_h^{l,n}$     |                                   | $+\sum_o\sum_n \Delta L_f^{o,n}$ |            $-\sum_n \Delta L^n$            |                      |   $0$   |
 | 現金の移動     |                                          |                                   |                                  |            $-\sum_n \Delta H^n$            | $+\sum_n \Delta H^n$ |   $0$   |
