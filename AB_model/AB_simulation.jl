@@ -35,7 +35,7 @@ c_base = 0.1
 
 α1, α2, α3, α4 = 0.8, 0.02, 2.0, 0.01
 β1, β2, β3, β4 = 0.02, 0.01, 0.2, 1.5 # 0.02, 0.02, 0.2, 2.0
-γ1, γ2 = 1.0, 0.02
+γ1, γ2 = 1.0, 0.2
 δ = 0.05
 ϵ1, ϵ2 = 1.0, 1.0
 λ1, λ2, λ3, λ4, λ5, λ6, λ7, λ8 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3
@@ -218,7 +218,7 @@ function household_portfolio_func(t, o_j_value_n_info)
     Vs = max.(0.0, 
             -dropdims(sum(Lh[:,:,t-1],dims=2);dims=2)
             +dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)
-            +dropdims(sum(Eh[:,:,t-1], dims=1);dims=1)
+            +dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)
             +dropdims(sum(Fh[:,:,t-1], dims=1);dims=1)
             +NLh[:,t])
     for (o,j,value,n) in o_j_value_n_info
@@ -292,7 +292,7 @@ function Eb_func(t)
     end
 end
 
-function ΔMh_and_Mh_func(t, tmp_os)
+function ΔMh_and_Mh_func(t, with_flo_os, o_j_value_n_info)
     global ΔMh, Mh
     change = rand(J) .< ξ1
     prob = max.(zeros(N), NWb[:,t-1])
@@ -302,8 +302,7 @@ function ΔMh_and_Mh_func(t, tmp_os)
         prob /= sum(prob)
     end
     for j=1:J
-        ΔMh_sum = NLh[j,t]-sum(pe[tmp_os,t-1].*Δeh[tmp_os,j,t])-sum(pf[:,t-1].*Δfh[:,j,t])+sum(ΔLh[j,:,t])
-        tmp1, tmp2, tmp3 = pe[tmp_os,t-1], Δeh[tmp_os,j,t], -sum(pe[tmp_os,t-1].*Δeh[tmp_os,j,t])
+        ΔMh_sum = NLh[j,t]-sum(pe[with_flo_os,t-1].*Δeh[with_flo_os,j,t])-sum(pf[:,t-1].*Δfh[:,j,t])+sum(ΔLh[j,:,t])
         last_n = 0
         for n=1:N
             if Mh[n,j,t-1] > 0.0
@@ -323,16 +322,16 @@ function ΔMh_and_Mh_func(t, tmp_os)
     end
 end
 
-function ΔMf_and_Mf_func(t, tmp_os, o_j_value_n_info)
+function ΔMf_and_Mf_func(t, o_j_value_n_info, os_adds)
     global ΔMf, Mf
-    change = rand(length(tmp_os)) .< ξ2
+    change = rand(O) .< ξ2
     prob = max.(zeros(N), NWb[:,t-1])
     if prob[end]==0.0
         change .= false
     else
         prob /= sum(prob)
     end
-    for (x, o) in enumerate(tmp_os)
+    for (x, o) in enumerate(os)
         ΔMf_sum = NLf[o,t]+sum(ΔLf[o,:,t])+sum(pe[o,t-1].*Δe[o,t])
         last_n = 0
         if o in os
@@ -359,6 +358,9 @@ function ΔMf_and_Mf_func(t, tmp_os, o_j_value_n_info)
             Mf[last_n,o,t] = Mf[last_n,o,t-1] + ΔMf_sum
             ΔMf[last_n,o,t] = ΔMf_sum
         end
+    end
+    for o in os_adds
+        Mf[:,o,t] = ΔMf[:,o,t]
     end
 end
 
@@ -388,10 +390,10 @@ function insolvency_disposition(t)
 end
 
 function flotation(t) # 起業
-    global G_calc_item, G_potential, A
+    global G_calc_item, G_potential
     global ΔMh, ΔMf
     global Δe, Δeh
-    global k, pe
+    global k, pe, p, A
     floations_info, o_j_value_n_info, os_adds = [], [], []
     next_o = 1
     for q=1:size(k)[1]
@@ -419,7 +421,7 @@ function flotation(t) # 起業
                 # 企業の預金増加に伴う変化
                 cap_Mf = 0.5*Mh[n,cap_j,t-1]
                 #ΔMh[n,cap_j,t] -= cap_Mf
-                #ΔMf[n,o,t] = cap_Mf   # 資本家と企業が同じ銀行に口座を持つこととする
+                ΔMf[n,o,t] = cap_Mf   # 資本家と企業が同じ銀行に口座を持つこととする
 
                 # 投資した家計の情報を追加
                 push!(o_j_value_n_info, (o, cap_j, cap_Mf, n))
@@ -434,16 +436,15 @@ function flotation(t) # 起業
         k[o,t] = 1.0
         A[o,t] = sample(A[os,t-1])
 
+        # 希望価格
+        p[o,t] = ν2*(1+ν1)*(w[work_j,t]+δ*k[o,t])/(uT*γ1*k[o,t])+(1-ν2)*(λ5*mean(p[o,t])+(1-λ5)*p[o,t])
+
         # 生存企業のリストにIDを追加
         push!(os_adds, o)
     end
     # 政府支出受注額決定のための配列を更新
     append!(G_calc_item, [1.0 for _=1:floation_count])
     append!(G_potential, [0.0 for _=1:floation_count])
-    """
-    # 企業総数を更新
-    O += floation_count
-    """
 
     return floations_info, o_j_value_n_info, os_adds
 end
@@ -499,7 +500,9 @@ function one_season(TIMERANGE)
         NLf[os,t] = -I[os,t] + Pf[os,t]
         NLb[:,t] = rL*L[:,t-1] + dropdims(sum(Pb[:,os,t], dims=2);dims=2) - dropdims(sum(S[:,:,t], dims=1);dims=1)
         NLg[t] = -sum(G[os,t])+sum(Ti[:,t])+sum(Ta[:,t])+sum(Tv[os,t])+sum(Tc[os,t])
+        println("transaction consistency 1 : ",sum(NLh[:,t])+sum(NLf[:,t])+sum(NLb[:,t])+sum(NLg[t]))
         flotation_info, o_j_value_n_info, os_adds = flotation(t)   # 起業
+        with_flo_os = cat(os, os_adds, dims=1)
         Lh_func(t)
         ΔLh[:,:,t] = Lh[:,:,t] - Lh[:,:,t-1]
         FR = I[os,t]+dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)
@@ -507,7 +510,7 @@ function one_season(TIMERANGE)
         ΔLf_and_Lf_func(t, FR.-pe[os,t-1].*Δe[os,t])
         L[:,t] = dropdims(sum(Lh[:,:,t], dims=1);dims=1) + dropdims(sum(Lf[:,:,t], dims=1);dims=1)
         ΔL[:,t] = dropdims(sum(ΔLh[:,:,t],dims=1);dims=1) + dropdims(sum(ΔLf[:,:,t],dims=1);dims=1)
-        E[:,t] = E[:,t-1] + pe[:,t-1].*Δe[:,t]
+        E[with_flo_os,t] = E[with_flo_os,t-1] + pe[with_flo_os,t-1].*Δe[with_flo_os,t]
         e[:,t] = e[:,t-1] + Δe[:,t]
         household_portfolio_func(t, o_j_value_n_info)
         f[:,t] = f[:,t-1]
@@ -518,28 +521,27 @@ function one_season(TIMERANGE)
         end
         Δfh[:,:,t] = fh[:,:,t] .- fh[:,:,t-1]
         Eb_func(t)
-        tmp_os = cat(os, os_adds, dims=1)
-        pe[tmp_os,t] = (dropdims(sum(Eh[tmp_os,:,t], dims=2);dims=2)+dropdims(sum(Eb[tmp_os,:,t], dims=2);dims=2))./e[tmp_os,t]
+        pe[with_flo_os,t] = (dropdims(sum(Eh[with_flo_os,:,t], dims=2);dims=2)+dropdims(sum(Eb[with_flo_os,:,t], dims=2);dims=2))./e[with_flo_os,t]
         for j=1:J
-            eh[tmp_os,j,t] = Eh[tmp_os,j,t]./pe[tmp_os,t]
+            eh[with_flo_os,j,t] = Eh[with_flo_os,j,t]./pe[with_flo_os,t]
         end
         for n=1:N
             eb[os,n,t] = Eb[os,n,t]./pe[os,t]
         end
-        Δeh[tmp_os,:,t] = eh[tmp_os,:,t] - eh[tmp_os,:,t-1]
+        Δeh[with_flo_os,:,t] = eh[with_flo_os,:,t] - eh[with_flo_os,:,t-1]
         Δeb[os,:,t] = eb[os,:,t] - eb[os,:,t-1]
-        ΔMh_and_Mh_func(t, tmp_os)
-        ΔMf_and_Mf_func(t, tmp_os, o_j_value_n_info)
-        M[:,t] = dropdims(sum(Mh[:,:,t], dims=2);dims=2)+dropdims(sum(Mf[:,tmp_os,t], dims=2);dims=2)
+        ΔMh_and_Mh_func(t, with_flo_os, o_j_value_n_info)
+        ΔMf_and_Mf_func(t, o_j_value_n_info, os_adds)
+        M[:,t] = dropdims(sum(Mh[:,:,t], dims=2);dims=2)+dropdims(sum(Mf[:,with_flo_os,t], dims=2);dims=2)
         ΔM[:,t] = dropdims(sum(ΔMh[:,:,t],dims=2);dims=2) + dropdims(sum(ΔMf[:,:,t],dims=2);dims=2)
         ΔH[:,t] = NLb[:,t]-[sum(pe[os,t-1].*Δeb[os,n,t]) for n=1:N]+ΔM[:,t]-ΔL[:,t]
         H[:,t] = H[:,t-1] + ΔH[:,t]
-        NWh[:,t] = dropdims(sum(Mh[:,:,t], dims=1);dims=1)-dropdims(sum(Lh[:,:,t], dims=2);dims=2)+dropdims(sum(Eh[tmp_os,:,t], dims=1);dims=1)+dropdims(sum(Fh[:,:,t], dims=1);dims=1)
-        NWf[tmp_os,t] = K[tmp_os,t]+dropdims(sum(Mf[:,tmp_os,t], dims=1);dims=1)-dropdims(sum(Lf[tmp_os,:,t], dims=2);dims=2)-E[tmp_os,t]
+        NWh[:,t] = dropdims(sum(Mh[:,:,t], dims=1);dims=1)-dropdims(sum(Lh[:,:,t], dims=2);dims=2)+dropdims(sum(Eh[with_flo_os,:,t], dims=1);dims=1)+dropdims(sum(Fh[:,:,t], dims=1);dims=1)
+        NWf[with_flo_os,t] = K[with_flo_os,t]+dropdims(sum(Mf[:,with_flo_os,t], dims=1);dims=1)-dropdims(sum(Lf[with_flo_os,:,t], dims=2);dims=2)-E[with_flo_os,t]
         NWb[:,t] = -M[:,t]+L[:,t]+dropdims(sum(Eb[os,:,t], dims=1);dims=1)-F[:,t]+H[:,t]
         NWg[t] = -sum(H[:,t])
-        NW[t] = sum(NWh[:,t])+sum(NWf[tmp_os,t])+sum(NWb[:,t])+NWg[t]
-        DE[t] = -sum(E[tmp_os,t])+sum(Eh[tmp_os,:,t])+sum(Eb[os,:,t])
+        NW[t] = sum(NWh[:,t])+sum(NWf[with_flo_os,t])+sum(NWb[:,t])+NWg[t]
+        DE[t] = -sum(E[with_flo_os,t])+sum(Eh[with_flo_os,:,t])+sum(Eb[os,:,t])
         DF[t] = sum(Fh[:,:,t])-sum(F[:,t])
         
         for o in os
@@ -547,9 +549,9 @@ function one_season(TIMERANGE)
         end
         
         println("transaction consistency : ",sum(NLh[:,t])+sum(NLf[:,t])+sum(NLb[:,t])+sum(NLg[t]))
-        println("h flow consistency : ",sum(NLh[:,t])-sum([sum(pe[:,t-1].*Δeh[:,j,t]) for j=1:J])-sum([sum(pf[:,t-1].*Δfh[:,j,t]) for j=1:J])+sum(ΔLh[:,:,t])-sum(ΔMh[:,:,t]))
-        println("f flow consistency : ",sum(NLf[:,t])+sum(pe[:,t-1].*Δe[:,t])+sum(ΔLf[:,:,t])-sum(ΔMf[:,:,t]))
-        println("b flow consistency : ",sum(NLb[:,t])-sum([sum(pe[:,t-1].*Δeb[:,n,t]) for n=1:N])-sum(ΔL[:,t])+sum(ΔM[:,t])-sum(ΔH[:,t]))
+        println("h flow consistency : ",sum(NLh[:,t])-sum([sum(pe[with_flo_os,t-1].*Δeh[with_flo_os,j,t]) for j=1:J])-sum([sum(pf[:,t-1].*Δfh[:,j,t]) for j=1:J])+sum(ΔLh[:,:,t])-sum(ΔMh[:,:,t]))
+        println("f flow consistency : ",sum(NLf[:,t])+sum(pe[with_flo_os,t-1].*Δe[with_flo_os,t])+sum(ΔLf[with_flo_os,:,t])-sum(ΔMf[:,with_flo_os,t]))
+        println("b flow consistency : ",sum(NLb[:,t])-sum([sum(pe[with_flo_os,t-1].*Δeb[with_flo_os,n,t]) for n=1:N])-sum(ΔL[:,t])+sum(ΔM[:,t])-sum(ΔH[:,t]))
         println("g flow consistency : ",NLg[t]+sum(ΔH[:,t]))
         println("stock consistency : ", sum(K[:,t])+DE[t]+DF[t]-NW[t])
 
@@ -618,17 +620,11 @@ function initialise()
         Mf[:,o,1] = shuffle(lstn)
     end
     M[:,1] = sum(Mh[:,:,1],dims=2)+sum(Mf[:,:,1],dims=2)
-    #* 借入金貸借ネットワーク
-    """for j=1:J
-        Lh[j,:,1] = shuffle(lstn)
-    end
-    for o=1:O
-        Lf[o,:,1] = shuffle(lstn)
-    end
-    L[:,1] = sum(Lh[:,:,1],dims=1)+sum(Lf[:,:,1],dims=1)"""
     #* 初期資本と初期価格
     k[os,1] .= J/O
-    p[os,1] .= 0.0
+    for o in os
+        p[o,1] = (1+ν1)*(sum(W[:,o,1])+δ*k[o,1])/(uT*γ1*k[o,1])
+    end
     K[os,1] = p[os,1].*k[os,1]
     A[os,1] .= 1.0
     #* 現金ネットワーク
@@ -675,9 +671,9 @@ println("%%%%%%%%%%%",NLg[TIME]+sum(ΔH[:,TIME]))
 plot(2:TIME, dropdims(sum(NLh[:,2:TIME],dims=1);dims=1).+dropdims(sum(NLf[:,2:TIME],dims=1);dims=1).+dropdims(sum(NLb[:,2:TIME],dims=1);dims=1).+NLg[2:TIME])
 savefig("AB_model/figs/transaction_consistency.png")
 
-plot(2:TIME,[sum(NLh[:,t])-sum([sum(pe[:,t-1].*Δeh[:,j,t]) for j=1:J])-sum([sum(pf[:,t-1].*Δfh[:,j,t]) for j=1:J])-sum(ΔMh[:,:,t])+sum(ΔLh[:,:,t]) for t=2:TIME],label="h")
-plot!(2:TIME,[sum(NLf[:,t])+sum(pe[:,t-1].*Δe[:,t])+sum(ΔLf[:,:,t])-sum(ΔMf[:,:,t]) for t=2:TIME],label="f")
-plot!(2:TIME,[sum(NLb[:,t])-sum([sum(pe[:,t-1].*Δeb[:,n,t]) for n=1:N])-sum(ΔL[:,t])+sum(ΔM[:,t])-sum(ΔH[:,t]) for t=2:TIME],label="b")
+plot(2:TIME,[sum(NLh[:,t])-sum([sum(pe[last_os[t],t-1].*Δeh[last_os[t],j,t]) for j=1:J])-sum([sum(pf[:,t-1].*Δfh[:,j,t]) for j=1:J])-sum(ΔMh[:,:,t])+sum(ΔLh[:,:,t]) for t=2:TIME],label="h")
+plot!(2:TIME,[sum(NLf[:,t])+sum(pe[last_os[t],t-1].*Δe[last_os[t],t])+sum(ΔLf[last_os[t],:,t])-sum(ΔMf[:,last_os[t],t]) for t=2:TIME],label="f")
+plot!(2:TIME,[sum(NLb[:,t])-sum([sum(pe[last_os[t],t-1].*Δeb[last_os[t],n,t]) for n=1:N])-sum(ΔL[:,t])+sum(ΔM[:,t])-sum(ΔH[:,t]) for t=2:TIME],label="b")
 plot!(2:TIME,[NLg[t]+sum(ΔH[:,t]) for t=2:TIME],label="g")
 savefig("AB_model/figs/flow_consistency.png")
 
@@ -688,13 +684,24 @@ savefig("AB_model/figs/pe_average.png")
 plot(2:TIME, dropdims(sum(pf[:,2:TIME],dims=1);dims=1)./N, label="pf_average")
 savefig("AB_model/figs/pf_average.png")
 
-plot(dropdims(sum(K[:,:],dims=1);dims=1).+DE.+DF.-NW)
+plot(dropdims(sum(K[:,:],dims=1);dims=1).+DE.+DF.-NW, label="all")
+plot!([sum(Mh[:,:,t])-sum(Lh[:,:,t])+sum(Eh[:,:,t])+sum(Fh[:,:,t])-sum(NWh[:,t]) for t=1:TIME], label="h")
+plot!([sum(K[:,t])+sum(Mf[:,:,t])-sum(Lf[:,:,t])-sum(E[:,t])-sum(NWf[:,t]) for t=1:TIME], label="f")
+plot!([-sum(M[:,t])+sum(L[:,t])+sum(Eb[:,:,t])-sum(F[:,t])+sum(H[:,t])-sum(NWb[:,t]) for t=1:TIME], label="b")
+plot!([-sum(H[:,t])-NWg[t] for t=1:TIME], label="g")
 savefig("AB_model/figs/stock_consistency.png")
 
-plot(2:TIME, [sum(M[:,t])-sum(Mf[:,:,t])-sum(Mh[:,:,t]) for t=2:TIME], label="M")
-plot!(2:TIME, [sum(ΔM[:,t])-sum(ΔMf[:,:,t])-sum(ΔMh[:,:,t]) for t=2:TIME], label="ΔM")
-plot!(2:TIME, [sum(L[:,t])-sum(Lf[:,:,t])-sum(Lh[:,:,t]) for t=2:TIME], label="L")
-plot!(2:TIME, [sum(ΔL[:,t])-sum(ΔLf[:,:,t])-sum(ΔLh[:,:,t]) for t=2:TIME], label="ΔL")
-plot!(2:TIME, [sum(e[:,t])-sum(eh[:,:,t])-sum(eb[:,:,t]) for t=2:TIME], label="e")
-plot!(2:TIME, [sum(Δe[:,t])-sum(Δeh[:,:,t])-sum(Δeb[:,:,t]) for t=2:TIME], label="Δe")
+plot(1:TIME, [sum(L[:,t])-(sum(Lh[:,:,t])+sum(Lf[:,:,t])) for t=1:TIME], label="L")
 savefig("AB_model/figs/TMP.png")
+
+plot(K[1,:],label="1")
+for o=2:os[end]
+    plot!(K[o,:], label=string(o))
+end
+savefig("AB_model/figs/Ks.png")
+
+plot(p[1,:],label="1")
+for o=2:os[end]
+    plot!(p[o,:], label=string(o))
+end
+savefig("AB_model/figs/ps.png")
