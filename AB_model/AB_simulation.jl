@@ -2,7 +2,7 @@ using StatsPlots
 using StatsBase
 using Random
 
-J, O, N, TIME,  = 20, 5, 2, 100
+J, O, N, TIME,  = 1000, 10, 3, 100
 Oin = 1
 OBuffer = O + TIME*Oin
 
@@ -25,7 +25,7 @@ u, v, A = zeros(OBuffer, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME)
 ΔZb, ΔZh, ΔZf = zeros(N, TIME), zeros(J, TIME), zeros(OBuffer, TIME)
 
 EMP = zeros(Int64, J,TIME)
-G_calc_item, G_potential = ones(O), ones(O)
+g_calc_item, g_potential = ones(O), ones(O)
 os = [o for o=1:O]
 last_os, drop_os = [deepcopy(os)], []
 
@@ -35,32 +35,32 @@ uT = 0.8
 c_base = 0.1
 
 α1, α2, α3, α4 = 0.8, 0.02, 2.0, 0.01
-β1, β2, β3, β4 = 0.02, 0.01, 0.2, 1.5 # 0.02, 0.02, 0.2, 2.0
+β1, β2, β3, β4 = 0.02, 0.002, 0.05, 1.0 # 0.02, 0.02, 0.2, 2.0
 γ1, γ2 = 1.0, 0.2
 δ = 0.05
-ϵ1, ϵ2 = 1.0, 1.0
-λ1, λ2, λ3, λ4, λ5, λ6, λ7, λ8 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3
+ϵ1, ϵ2, ϵ3 = 1.0, 1.0, 1.01
+λ1, λ2, λ3, λ4, λ5, λ6, λ7, λ8, λ9 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3, 0.8
 τ1, τ2, τ3, τ4 = 0.3, 0.02, 0.1, 0.2
 μ1, μ2 = 0.0, 0.1
 ν1, ν2 = 0.3, 0.5
 θ1, θ2 = 0.2, 0.1
-ϕ, ϕ2 = 1.0, 1.0
+ϕ1, ϕ2 = 0.8, 1.0   # ϕ1<1-θ2
 ψ1, ψ2, ψ3, ψ4 = 0.1, 0.01, 1.0, 1.0
 ζ1, ζ2, ζ3 = 0.1, 0.02, 0.04 # 0.05,0.02,0.04
 ξ1, ξ2 = 0.05, 0.05
 
 # 関数定義
 
-function G_func(t)
-    global G, G_calc_item, G_potential
-    Gsum = G0*(1+β1)^(t-1)
-    G_calc_item .*= 1.0 .- β2 .+ β3*randn(O)
-    G_calc_item = max.(1.0, G_calc_item)
-    G_potential = max.(0.0, G_calc_item .- β4)
-    if sum(G_potential)==0.0
-        G_potential[sample(1:O)] = 1.0
+function g_func(t)
+    global g, g_calc_item, g_potential
+    gsum = G0*(1+β1)^(t-1)
+    g_calc_item .*= 1.0 .- β2 .+ β3*randn(O)
+    g_calc_item = max.(1.0, g_calc_item)
+    g_potential = max.(0.0, g_calc_item .- β4)
+    if sum(g_potential)==0.0
+        g_potential[sample(1:O)] = 1.0
     end
-    G[os,t] = G_potential.*Gsum/sum(G_potential)
+    g[os,t] = g_potential.*gsum/sum(g_potential)
 end
 
 function c_func(t)
@@ -186,7 +186,7 @@ end
 function Lh_func(t)
     global Lh
     tmp = (dropdims(sum(C[:,:,t], dims=1);dims=1)+Ta[:,t]+Ti[:,t]+rL*dropdims(sum(Lh[:,:,t-1],dims=2);dims=2)) - dropdims(sum(Mh[:,:,t-1],dims=1);dims=1)
-    Lhs = max.(0.0, ϵ1*NLh[:,t] + ϵ2*dropdims(sum(C[os,:,t], dims=1);dims=1), dropdims(sum(Lh[:,:,t-1],dims=2);dims=2)+1.01*tmp)
+    Lhs = max.(0.0, ϵ1*NLh[:,t] + ϵ2*dropdims(sum(C[os,:,t], dims=1);dims=1), dropdims(sum(Lh[:,:,t-1],dims=2);dims=2)+ϵ3*tmp)
     for j=1:J
         for n=1:N
             if Mh[n,j,t-1] > 0.0
@@ -254,8 +254,8 @@ function household_portfolio_func(t, o_j_value_n_info)
         end
         # 収益率から、資産に占める株式の割合の目標を計算し、保有額を決める
         EF_volume = Vs[j]*λ1
-        if lastEhFhSum!==0.0
-            EF_volume = Vs[j]*(λ1 + λ2*(sum(Ph[j,os,t])+sum(S[j,:,t]))/(lastEhFhSum))
+        if (lastEhFhSum!==0.0) & (t>2)
+            EF_volume = Vs[j]*min(λ9, (λ1 + λ2*(sum(Ph[j,os,t])+sum(S[j,:,t]))/(lastEhFhSum)))
         end
         # EF_volume/length(lst)を単位としてlstの企業または銀行の株の保有割合を決める
         for on in lst
@@ -293,7 +293,7 @@ function Eb_func(t)
     end
 end
 
-function ΔMh_and_Mh_func(t, with_flo_os)
+function ΔMh_and_Mh_func(t)
     global ΔMh, Mh
     change = rand(J) .< ξ1
     prob = max.(zeros(N), NWb[:,t-1])
@@ -319,6 +319,12 @@ function ΔMh_and_Mh_func(t, with_flo_os)
         else
             Mh[last_n,j,t] = Mh[last_n,j,t-1] + ΔMh_sum
             ΔMh[last_n,j,t] = ΔMh_sum
+        end
+        if sum(Mh[:,j,t]) <= 0.0
+            println("j=",j)
+            println("Mh=",Mh[:,j,t],", Lh=",Lh[j,:,t])
+            println("NLh=",NLh[j,t],", peΔeh=",sum(pe[:,t-1].*Δeh[:,j,t]),", pfΔfh=",sum(pf[:,t-1].*Δfh[:,j,t]),", ΔLh=", sum(ΔLh[j,:,t]),", ΔZh=",ΔZh[j,t])
+            println("ΔMh_sum=",ΔMh_sum)
         end
     end
 end
@@ -365,8 +371,20 @@ function ΔMf_and_Mf_func(t, o_j_value_n_info, os_adds)
     end
 end
 
+function suply_line(t)
+    global g, c, i
+    for o in os
+        if u[o,t]>1.0
+            g[o,t] /= u[o,t]
+            c[o,:,t] ./= u[o,t]
+            i[o,t] /= u[o,t]
+            u[o,t] = 1.0
+        end
+    end
+end
+
 function insolvency_disposition(t)
-    global os, EMP, G_calc_item, G_potential, O, drop_os
+    global os, EMP, g_calc_item, g_potential, O, drop_os
     global ΔMf, ΔLf, Δe, Δeh, Δeb
     global ΔZb, ΔZh, ΔZf
     q = 1
@@ -375,8 +393,8 @@ function insolvency_disposition(t)
         o = os[q]
         if (sum(Mf[:,o,t])<ϕ2*sum(Lf[o,:,t])) & (P[o,t]-I[o,t]<0.0)
             setdiff!(os, o)
-            deleteat!(G_calc_item, q)
-            deleteat!(G_potential, q)
+            deleteat!(g_calc_item, q)
+            deleteat!(g_potential, q)
             EMP[EMP[:,t].==o, t] .= 0
             if t<TIME
                 nMf = findall(x -> x > 0.0, Mf[:,o,t])[1]
@@ -401,7 +419,7 @@ function insolvency_disposition(t)
 end
 
 function flotation(t) # 起業
-    global G_calc_item, G_potential
+    global g_calc_item, g_potential
     global ΔMh, ΔMf
     global Δe, Δeh
     global k, pe, p, A
@@ -444,7 +462,7 @@ function flotation(t) # 起業
         Δe[o,t] = cap_Mf
         Δeh[o,cap_j,t] = cap_Mf
         # 企業が価格のつかない資本を持つことに伴う変化
-        k[o,t] = 1.0
+        k[o,t] = 1.0*cap_Mf # 本当は他の企業の
         A[o,t] = sample(A[os,t-1])
 
         # 希望価格
@@ -454,8 +472,8 @@ function flotation(t) # 起業
         push!(os_adds, o)
     end
     # 政府支出受注額決定のための配列を更新
-    append!(G_calc_item, [1.0 for _=1:floation_count])
-    append!(G_potential, [0.0 for _=1:floation_count])
+    append!(g_calc_item, [1.0 for _=1:floation_count])
+    append!(g_potential, [0.0 for _=1:floation_count])
 
     return floations_info, o_j_value_n_info, os_adds
 end
@@ -486,16 +504,17 @@ function one_season(TIMERANGE)
         Ta[:,t] = τ2*(dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)+dropdims(sum(Fh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
         Tv[os,t] = τ3*(dropdims(sum(C[os,:,t-1], dims=2);dims=2)+I[os,t-1]+G[os,t-1])
         Tc[os,t] = max.(0.0, τ4*(dropdims(sum(C[os,:,t-1], dims=2);dims=2)+G[os,t-1]+I[os,t-1]-dropdims(sum(W[:,os,t-1], dims=1);dims=1)-Tv[os,t-1]))
-        G_func(t)
-        g[os,t] = G[os,t]./p[os,t]
+        g_func(t)
         c_func(t)
+        i[os,t] = max.(0.0, δ*k[os,t-1]+(u[os,t-1].-uT).*γ1.*k[os,t-1]+γ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))./p[os,t])
+        u[os,t] = (dropdims(sum(c[os,:,t], dims=2);dims=2)+i[os,t]+g[os,t])./(γ1*k[os,t-1])
+        suply_line(t)
+        G[os,t] = p[os,t].*g[os,t]
         for o in os
             C[o,:,t] = p[o,t]*c[o,:,t]
         end
-        A[os,t] = A[os,t-1].*(1+μ1.+μ2*i[os,t-1]./k[os,t-1])
-        i[os,t] = max.(0.0, δ*k[os,t-1]+(u[os,t-1].-uT).*γ1.*k[os,t-1]+γ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))./p[os,t])
         I[os,t] = p[os,t].*i[os,t]
-        u[os,t] = (dropdims(sum(c[os,:,t], dims=2);dims=2)+i[os,t]+g[os,t])./(γ1*k[os,t-1])
+        A[os,t] = A[os,t-1].*(1+μ1.+μ2*i[os,t-1]./k[os,t-1])
         k[os,t] = (1-δ).*k[os,t-1]+i[os,t]
         K[os,t] = p[os,t].*k[os,t]
         P[os,t] = dropdims(sum(C[os,:,t], dims=2);dims=2)+G[os,t]+I[os,t]-dropdims(sum(W[:,os,t], dims=1);dims=1)-Tv[os,t]-Tc[os,t]-rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)
@@ -515,7 +534,7 @@ function one_season(TIMERANGE)
         with_flo_os = cat(os, os_adds, dims=1)
         Lh_func(t)
         ΔLh[:,:,t] = Lh[:,:,t] - Lh[:,:,t-1]
-        FR = I[os,t]+dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)
+        FR = I[os,t]+dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ1*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)
         Δe[os,t] = min.(max.(-λ7*e[os,t-1], 1/p[os,t-1]*(1-λ3.-λ4*((P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)).-rL)).*FR), λ8*e[os,t-1])
         ΔLf_and_Lf_func(t, FR.-pe[os,t-1].*Δe[os,t])
         L[:,t] = dropdims(sum(Lh[:,:,t], dims=1);dims=1) + dropdims(sum(Lf[:,:,t], dims=1);dims=1)
@@ -540,7 +559,7 @@ function one_season(TIMERANGE)
         end
         Δeh[with_flo_os,:,t] = eh[with_flo_os,:,t] - eh[with_flo_os,:,t-1]
         Δeb[os,:,t] = eb[os,:,t] - eb[os,:,t-1]
-        ΔMh_and_Mh_func(t, with_flo_os)
+        ΔMh_and_Mh_func(t)
         ΔMf_and_Mf_func(t, o_j_value_n_info, os_adds)
         M[:,t] = dropdims(sum(Mh[:,:,t], dims=2);dims=2)+dropdims(sum(Mf[:,:,t], dims=2);dims=2)
         ΔM[:,t] = dropdims(sum(ΔMh[:,:,t],dims=2);dims=2) + dropdims(sum(ΔMf[:,:,t],dims=2);dims=2)
@@ -569,8 +588,8 @@ function one_season(TIMERANGE)
         O += length(os_adds)
         push!(last_os, deepcopy(os))
         insolvency_disposition(t)   # 倒産処理
-        println(os, last_os[end])
-        if t%7==0
+        #println(os, last_os[end])
+        if t%10==0
             all_plot(t)
         end
     end
@@ -586,7 +605,7 @@ function initialise()
     global NWh, NWf, NWb, NWg, NW
 
     for _=1:10
-        G_func(1)
+        g_func(1)
     end
 
     lstj, lsto, lstn = zeros(J), zeros(O), zeros(N)
@@ -617,7 +636,7 @@ function initialise()
     pe[os,1] .= 1.0
     eh[os,:,1], eb[os,:,1], e[os,1] = Eh[os,:,1], Eb[os,:,1], E[os,1]
     #* 銀行株式保有ネットワーク
-    Fh[:,:,1] = rand(N,J)
+    Fh[:,:,1] = ones(N,J)
     for j=1:J
         Fh[:,j,1] /= sum(Fh[:,j,1])
     end
@@ -676,13 +695,6 @@ function all_plot(time)
     plot!(2:time,[NLg[t]+sum(ΔH[:,t]) for t=2:time],label="g")
     savefig("AB_model/figs/flow_consistency.png")
 
-    plot(2:time, [dropdims(sum(p[last_os[t],t],dims=1);dims=1)./length(last_os[t]) for t=2:time], label="p_average")
-    savefig("AB_model/figs/p_average.png")
-    plot(2:time, [dropdims(sum(pe[last_os[t],t],dims=1);dims=1)./length(last_os[t]) for t=2:time], label="pe_average")
-    savefig("AB_model/figs/pe_average.png")
-    plot(2:time, dropdims(sum(pf[:,2:time],dims=1);dims=1)./N, label="pf_average")
-    savefig("AB_model/figs/pf_average.png")
-
     plot(dropdims(sum(K[:,1:time],dims=1);dims=1).+DE[1:time].+DF[1:time].-NW[1:time], label="all")
     plot!([sum(Mh[:,:,t])-sum(Lh[:,:,t])+sum(Eh[:,:,t])+sum(Fh[:,:,t])-sum(NWh[:,t]) for t=1:time], label="h")
     plot!([sum(K[:,t])+sum(Mf[:,:,t])-sum(Lf[:,:,t])-sum(E[:,t])-sum(NWf[:,t]) for t=1:time], label="f")
@@ -690,21 +702,99 @@ function all_plot(time)
     plot!([-sum(H[:,t])-NWg[t] for t=1:time], label="g")
     savefig("AB_model/figs/stock_consistency.png")
 
-    plot(2:time, [sum(L[:,t])-(sum(L[:,t-1])+sum(ΔL[:,t])) for t=2:time], label="L")
-    plot!(2:time, [sum(M[:,t])-(sum(M[:,t-1])+sum(ΔM[:,t])) for t=2:time], label="M")
-    savefig("AB_model/figs/TMP.png")
+    plot(2:time, [dropdims(sum(p[last_os[t],t],dims=1);dims=1)./length(last_os[t]) for t=2:time], label="p_average")
+    savefig("AB_model/figs/p_average.png")
+    plot(2:time, [dropdims(sum(pe[last_os[t],t],dims=1);dims=1)./length(last_os[t]) for t=2:time], label="pe_average")
+    savefig("AB_model/figs/pe_average.png")
+    plot(2:time, dropdims(sum(pf[:,2:time],dims=1);dims=1)./N, label="pf_average")
+    savefig("AB_model/figs/pf_average.png")
 
-    plot(K[1,1:time],label="1")
-    for o=2:os[end]
-        plot!(K[o,1:time], label=string(o))
+    TIMERANGE = max(1,time-20):time
+    ΔT = length(TIMERANGE)
+
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for o in last_os[end-1]
+        plot!(TIMERANGE, K[o,TIMERANGE], label=string(o))
     end
     savefig("AB_model/figs/Ks.png")
 
-    plot(p[1,1:time],label="1")
-    for o=2:os[end]
-        plot!(p[o,1:time], label=string(o))
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for o in last_os[end-1]
+        plot!(TIMERANGE, i[o,TIMERANGE], label=string(o))
+    end
+    savefig("AB_model/figs/is.png")
+
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for o in last_os[end-1]
+        plot!(TIMERANGE, k[o,TIMERANGE], label=string(o))
+    end
+    savefig("AB_model/figs/ks.png")
+
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for o in last_os[end-1]
+        plot!(TIMERANGE, dropdims(sum(Mf[:,o,TIMERANGE],dims=1);dims=1), label=string(o))
+    end
+    savefig("AB_model/figs/Mfs.png")
+
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for o in last_os[end-1]
+        plot!(TIMERANGE, dropdims(sum(Lf[o,:,TIMERANGE],dims=1);dims=1), label=string(o))
+    end
+    savefig("AB_model/figs/Lfs.png")
+
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for o in last_os[end-1]
+        plot!(TIMERANGE, u[o,TIMERANGE],label=string(o))
+    end
+    savefig("AB_model/figs/u.png")
+
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for o in last_os[end-1]
+        plot!(TIMERANGE, dropdims(sum(c[o,:,TIMERANGE],dims=1);dims=1),label=string(o))
+    end
+    savefig("AB_model/figs/cfs.png")
+
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for o in last_os[end-1]
+        plot!(TIMERANGE, g[o,TIMERANGE],label=string(o))
+    end
+    savefig("AB_model/figs/gfs.png")
+
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for o in last_os[end-1]
+        plot!(TIMERANGE, p[o,TIMERANGE], label=string(o))
     end
     savefig("AB_model/figs/ps.png")
+
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for n=1:N
+        plot!(TIMERANGE, dropdims(sum(S[:,n,TIMERANGE],dims=1);dims=1), label=string(n))
+    end
+    savefig("AB_model/figs/S.png")
+
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for n=1:N
+        plot!(TIMERANGE, dropdims(sum(Pb[n,:,TIMERANGE],dims=1);dims=1), label=string(n))
+    end
+    savefig("AB_model/figs/Pb.png")
+
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for j=1:J
+        plot!(TIMERANGE, dropdims(sum(Ph[j,:,TIMERANGE],dims=1);dims=1), label=string(j))
+    end
+    savefig("AB_model/figs/Ph.png")
+
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for o in last_os[end-1]
+        plot!(TIMERANGE, Pf[o,TIMERANGE], label=string(o))
+    end
+    savefig("AB_model/figs/Pf.png")
+
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for o in last_os[end-1]
+        plot!(TIMERANGE, P[o,TIMERANGE], label=string(o))
+    end
+    savefig("AB_model/figs/P.png")
 end
 
 
