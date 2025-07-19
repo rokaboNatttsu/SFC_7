@@ -28,6 +28,7 @@ EMP = zeros(Int64, J,TIME)
 g_calc_item, g_potential = ones(O), ones(O)
 os = [o for o=1:O]
 last_os, drop_os = [deepcopy(os)], []
+UER = zeros(TIME)
 
 rL = 0.02
 G0 = 1.0*J
@@ -38,14 +39,14 @@ c_base = 0.1
 β1, β2, β3, β4 = 0.02, 0.002, 0.05, 1.0 # 0.02, 0.02, 0.2, 2.0
 γ1, γ2 = 1.0, 0.2
 δ = 0.05
-ϵ1, ϵ2, ϵ3 = 1.0, 1.0, 1.01
+ϵ1, ϵ2, ϵ3 = 1.0, 1.0, 0.1
 λ1, λ2, λ3, λ4, λ5, λ6, λ7, λ8, λ9 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3, 0.8
 τ1, τ2, τ3, τ4 = 0.3, 0.02, 0.1, 0.2
 μ1, μ2 = 0.0, 0.1
 ν1, ν2 = 0.3, 0.5
 θ1, θ2 = 0.2, 0.1
 ϕ1, ϕ2 = 0.8, 1.0   # ϕ1<1-θ2
-ψ1, ψ2, ψ3, ψ4 = 0.1, 0.01, 1.0, 1.0
+ψ2, ψ3, ψ4 = 0.01, 1.0, 5.0
 ζ1, ζ2, ζ3 = 0.1, 0.02, 0.04 # 0.05,0.02,0.04
 ξ1, ξ2 = 0.05, 0.05
 
@@ -103,7 +104,7 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
     flotations_js = [info[2] for info in flotation_info]
     flotations_os = [info[3] for info in flotation_info]
     # 求人数を作る
-    offers = [Int64(round(max(0, (u[o,t-1]*k[o,t-1]-A[o,t-1]*sum(W[:,o,t-1].>0))/A[o,t-1]))) for o in os]
+    offers = [Int64(round(max(0, (u[o,t-1]*k[o,t-1]-A[o,t-1]*sum(w[:,t-1].==o))/A[o,t-1]))) for o in os]
     # 応募確率を作る
     prob = zeros(O)
     for q in 1:O
@@ -149,7 +150,7 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
     end
     # マッチング
     for q=1:O
-        if offers[q] > 0 & length(appli[q]) > 0
+        if (offers[q] > 0) & (length(appli[q]) > 0)
             much = collect(Set(sample(appli[q], offers[q])))
             for x=1:length(much)
                 j = much[x]
@@ -183,10 +184,15 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
     end
 end
 
-function Lh_func(t)
+function Lh_func(t, with_flo_os)
     global Lh
-    tmp = (dropdims(sum(C[:,:,t], dims=1);dims=1)+Ta[:,t]+Ti[:,t]+rL*dropdims(sum(Lh[:,:,t-1],dims=2);dims=2)) - dropdims(sum(Mh[:,:,t-1],dims=1);dims=1)
-    Lhs = max.(0.0, ϵ1*NLh[:,t] + ϵ2*dropdims(sum(C[os,:,t], dims=1);dims=1), dropdims(sum(Lh[:,:,t-1],dims=2);dims=2)+ϵ3*tmp)
+    #tmp = (dropdims(sum(C[:,:,t], dims=1);dims=1)+Ta[:,t]+Ti[:,t]+rL*dropdims(sum(Lh[:,:,t-1],dims=2);dims=2)) - dropdims(sum(Mh[:,:,t-1],dims=1);dims=1)
+    tmp = -(dropdims(sum(Mh[:,:,t-1],dims=1);dims=1) .+ NLh[:,t] 
+            .- [sum(pe[with_flo_os,t-1].*Δeh[with_flo_os,j,t]) for j=1:J] .- [sum(pf[:,t-1].*Δfh[:,j,t]) for j=1:J])
+    #        .+ [sum(pe[drop_os,t-1].*Δeh[drop_os,j,t]) for j=1:J] .+ [sum(pf[:,t-1].*Δfh[:,j,t]) for j=1:J])
+    tmp[tmp .< 0.0] .*= 1.0 - ϵ3 # 支払いのための預金が足りるとき
+    tmp[tmp .> 0.0] .*= 1.0 + ϵ3 # 預金が不足するとき
+    Lhs = max.(0.0, ϵ1*NLh[:,t] + ϵ2*dropdims(sum(C[with_flo_os,:,t], dims=1);dims=1), dropdims(sum(Lh[:,:,t-1],dims=2);dims=2)+tmp)
     for j=1:J
         for n=1:N
             if Mh[n,j,t-1] > 0.0
@@ -226,12 +232,10 @@ function household_portfolio_func(t, o_j_value_n_info)
         Vs[j] -= value
     end
     # ポートフォリオ配分先の確率の重みの共通部分を計算
-    index = ψ1*(Pf[os,t] - I[os,t])
-            +ψ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))
-            +ψ3*(P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2))
+    index = ψ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))
+            +ψ3*(P[os,t]-Pf[os,t])#./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2))
     append!(index, 
-            ψ1*(rL.*L[:,t-1]+dropdims(sum(Pb[:,os,t], dims=2);dims=2))
-            +ψ3*dropdims(sum(S[:,:,t], dims=1);dims=1)./dropdims(sum(Fh[:,:,t-1], dims=2);dims=2))
+            +ψ3*dropdims(sum(S[:,:,t], dims=1);dims=1))#./dropdims(sum(Fh[:,:,t-1], dims=2);dims=2))
     index = max.(zeros(O+N), index)
     index /= sum(index)
     # ポートフォリオ配分先の数Int64(x[j])を決めるための準備。
@@ -275,11 +279,10 @@ end
 function Eb_func(t)
     global Eb
     # ポートフォリオ配分先の確率の重みの共通部分を計算
-    index = ψ1*(Pf[os,t] - I[os,t]) 
-            +ψ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)) 
-            +ψ3*(P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)) 
-            +ψ4*(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2))/(sum(Eh[os,:,t-1])+sum(Eb[os,:,t-1]))
-    index = exp.(O*index./(sum(Eh[os,:,t-1])+sum(Eb[os,:,t-1])))
+    index = ψ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)) 
+            +ψ3*(P[os,t]-Pf[os,t])#./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)) 
+    #index = exp.(O*index./(sum(Eh[os,:,t-1])+sum(Eb[os,:,t-1])))
+    index = exp.(index).^ψ4
     index /= sum(index)
     # 銀行nのポートフォリオ計算
     for n=1:N
@@ -293,7 +296,7 @@ function Eb_func(t)
     end
 end
 
-function ΔMh_and_Mh_func(t)
+function ΔMh_and_Mh_func(t, with_flo_os)
     global ΔMh, Mh
     change = rand(J) .< ξ1
     prob = max.(zeros(N), NWb[:,t-1])
@@ -303,7 +306,7 @@ function ΔMh_and_Mh_func(t)
         prob /= sum(prob)
     end
     for j=1:J
-        ΔMh_sum = NLh[j,t]-sum(pe[:,t-1].*Δeh[:,j,t])-sum(pf[:,t-1].*Δfh[:,j,t])+sum(ΔLh[j,:,t])-ΔZh[j,t]
+        ΔMh_sum = NLh[j,t]-sum(pe[with_flo_os,t-1].*Δeh[with_flo_os,j,t])-sum(pf[:,t-1].*Δfh[:,j,t])+sum(ΔLh[j,:,t])
         last_n = 0
         for n=1:N
             if Mh[n,j,t-1] > 0.0
@@ -323,8 +326,12 @@ function ΔMh_and_Mh_func(t)
         if sum(Mh[:,j,t]) <= 0.0
             println("j=",j)
             println("Mh=",Mh[:,j,t],", Lh=",Lh[j,:,t])
-            println("NLh=",NLh[j,t],", peΔeh=",sum(pe[:,t-1].*Δeh[:,j,t]),", pfΔfh=",sum(pf[:,t-1].*Δfh[:,j,t]),", ΔLh=", sum(ΔLh[j,:,t]),", ΔZh=",ΔZh[j,t])
+            println("NLh=",NLh[j,t],", peΔeh=",sum(pe[with_flo_os,t-1].*Δeh[with_flo_os,j,t]),", pfΔfh=",sum(pf[:,t-1].*Δfh[:,j,t]),", ΔLh=", sum(ΔLh[j,:,t]))
             println("ΔMh_sum=",ΔMh_sum)
+            tmp1 = -(dropdims(sum(Mh[:,:,t-1],dims=1);dims=1) .+ NLh[:,t] .- [sum(pe[os,t-1].*Δeh[os,j,t]) for j=1:J] .- [sum(pf[:,t-1].*Δfh[:,j,t]) for j=1:J])
+            tmp2 = ϵ1*NLh[:,t] + ϵ2*dropdims(sum(C[os,:,t], dims=1);dims=1)
+            println("tmp1=",tmp1[j])
+            println("tmp2=",tmp2[j])
         end
     end
 end
@@ -391,7 +398,10 @@ function insolvency_disposition(t)
     drop_os = []
     while length(os) >= q
         o = os[q]
-        if (sum(Mf[:,o,t])<ϕ2*sum(Lf[o,:,t])) & (P[o,t]-I[o,t]<0.0)
+        if (sum(Mf[:,o,t])<ϕ2*sum(Lf[o,:,t])) & (P[o,t]-I[o,t]<0.0) & (I[o,t] == 0.0)
+            println("P-1=$(P[o,t-1]), I-1=$(I[o,t-1]), C-1=$(sum(C[o,:,t-1])), G-1=$(G[o,t-1]), W-1=$(sum(W[:,o,t-1]))")
+            println("P=$(P[o,t]), I=$(I[o,t]), C=$(sum(C[o,:,t])), G=$(G[o,t]), W=$(sum(W[:,o,t]))")
+            println("Mf=$(sum(Mf[:,o,t])), Lf=$(sum(Lf[o,:,t]))")
             setdiff!(os, o)
             deleteat!(g_calc_item, q)
             deleteat!(g_potential, q)
@@ -463,10 +473,12 @@ function flotation(t) # 起業
         Δeh[o,cap_j,t] = cap_Mf
         # 企業が価格のつかない資本を持つことに伴う変化
         k[o,t] = 1.0*cap_Mf # 本当は他の企業の
-        A[o,t] = sample(A[os,t-1])
+        Awaight = dropdims(sum(c[os,:,t],dims=2);dims=2).+g[os,t]
+        A[o,t] = sample(A[os,t-1], Weights(Awaight))
 
         # 希望価格
-        p[o,t] = ν2*(1+ν1)*(w[work_j,t]+δ*k[o,t])/(uT*γ1*k[o,t])+(1-ν2)*(λ5*mean(p[o,t])+(1-λ5)*p[o,t])
+        p_mean = (sum(C[:,:,t-1]) + sum(G[:,t-1]))/(sum(c[:,:,t-1]) + sum(g[:,t-1]))
+        p[o,t] = ν2*(1+ν1)*(w[work_j,t]+δ*k[o,t])/(uT*γ1*k[o,t])+(1-ν2)*p_mean
 
         # 生存企業のリストにIDを追加
         push!(os_adds, o)
@@ -492,13 +504,15 @@ function one_season(TIMERANGE)
     global fh, f, Δfh, Δf, Fh, F
     global H, ΔH
     global NWh, NWf, NWb, NWg, NW
-    global last_os, O, drop_os
+    global last_os, O
+    global UER
 
     flotation_info = []
     for t=TIMERANGE
         println("##################### t=",t," ######################")
 
-        p[os,t] = ν2*(1+ν1).*(dropdims(sum(W[:,os,t-1], dims=1);dims=1)+Tv[os,t-1]+Tc[os,t-1]+δ*k[os,t-1])./(uT*γ1*k[os,t-1])+(1-ν2)*(λ5*mean(p[os,t-1]).+(1-λ5)*p[os,t-1])
+        p_mean = (sum(C[:,:,t-1]) + sum(G[:,t-1]))/(sum(c[:,:,t-1]) + sum(g[:,t-1]))
+        p[os,t] = ν2*(1+ν1).*(dropdims(sum(W[:,os,t-1], dims=1);dims=1)+Tv[os,t-1]+Tc[os,t-1]+δ*k[os,t-1])./(uT*γ1*k[os,t-1]).+(1-ν2)*p_mean
         w_and_W_func(t, flotation_info)
         Ti[:,t] = τ1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2))
         Ta[:,t] = τ2*(dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)+dropdims(sum(Fh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
@@ -532,13 +546,9 @@ function one_season(TIMERANGE)
         NLg[t] = -sum(G[os,t])+sum(Ti[:,t])+sum(Ta[:,t])+sum(Tv[os,t])+sum(Tc[os,t])
         flotation_info, o_j_value_n_info, os_adds = flotation(t)   # 起業
         with_flo_os = cat(os, os_adds, dims=1)
-        Lh_func(t)
-        ΔLh[:,:,t] = Lh[:,:,t] - Lh[:,:,t-1]
         FR = I[os,t]+dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ1*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)
         Δe[os,t] = min.(max.(-λ7*e[os,t-1], 1/p[os,t-1]*(1-λ3.-λ4*((P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)).-rL)).*FR), λ8*e[os,t-1])
         ΔLf_and_Lf_func(t, FR.-pe[os,t-1].*Δe[os,t])
-        L[:,t] = dropdims(sum(Lh[:,:,t], dims=1);dims=1) + dropdims(sum(Lf[:,:,t], dims=1);dims=1)
-        ΔL[:,t] = dropdims(sum(ΔLh[:,:,t],dims=1);dims=1) + dropdims(sum(ΔLf[:,:,t],dims=1);dims=1)
         E[:,t] = E[:,t-1] + pe[:,t-1].*Δe[:,t]
         e[:,t] = e[:,t-1] + Δe[:,t]
         household_portfolio_func(t, o_j_value_n_info)
@@ -559,7 +569,11 @@ function one_season(TIMERANGE)
         end
         Δeh[with_flo_os,:,t] = eh[with_flo_os,:,t] - eh[with_flo_os,:,t-1]
         Δeb[os,:,t] = eb[os,:,t] - eb[os,:,t-1]
-        ΔMh_and_Mh_func(t)
+        Lh_func(t, with_flo_os)
+        ΔLh[:,:,t] = Lh[:,:,t] - Lh[:,:,t-1]
+        L[:,t] = dropdims(sum(Lh[:,:,t], dims=1);dims=1) + dropdims(sum(Lf[:,:,t], dims=1);dims=1)
+        ΔL[:,t] = dropdims(sum(ΔLh[:,:,t],dims=1);dims=1) + dropdims(sum(ΔLf[:,:,t],dims=1);dims=1)
+        ΔMh_and_Mh_func(t, with_flo_os)
         ΔMf_and_Mf_func(t, o_j_value_n_info, os_adds)
         M[:,t] = dropdims(sum(Mh[:,:,t], dims=2);dims=2)+dropdims(sum(Mf[:,:,t], dims=2);dims=2)
         ΔM[:,t] = dropdims(sum(ΔMh[:,:,t],dims=2);dims=2) + dropdims(sum(ΔMf[:,:,t],dims=2);dims=2)
@@ -588,7 +602,9 @@ function one_season(TIMERANGE)
         O += length(os_adds)
         push!(last_os, deepcopy(os))
         insolvency_disposition(t)   # 倒産処理
-        #println(os, last_os[end])
+
+        UER[t] = sum(EMP[:,t].==0)/J
+        #println(drop_os)
         if t%10==0
             all_plot(t)
         end
@@ -597,7 +613,7 @@ end
 
 # 初期値設定
 function initialise()
-    global EMP
+    global EMP, UER
     global Eh, Eb, E, pe, eh, eb, e
     global Fh, F, f, fh
     global Lh, Lf, L
@@ -668,6 +684,8 @@ function initialise()
     NWb[:,1] = -M[:,1]+L[:,1]+dropdims(sum(Eb[os,:,1],dims=1);dims=1)-F[:,1]+H[:,1]
     NWg[1] = -sum(H[:,1])
     NW[1] = sum(K[:,1])
+
+    UER[1] = sum(EMP[:,1].==0)/J
 end
 
 
@@ -709,92 +727,142 @@ function all_plot(time)
     plot(2:time, dropdims(sum(pf[:,2:time],dims=1);dims=1)./N, label="pf_average")
     savefig("AB_model/figs/pf_average.png")
 
+    plot(2:time, [sum(W[:,:,t])/J for t=2:time], label=nothing)
+    savefig("AB_model/figs/W_average.png")
+
+    plot(2:time, UER[2:time], label=nothing)
+    savefig("AB_model/figs/unemployment_rate.png")
+
+    plot(2:time, [sum(u[last_os[t],t])/length(last_os[t]) for t=2:time], label="u_average")
+    savefig("AB_model/figs/u_average.png")
+
+    plot(2:time, [sum(v[last_os[t],t])/length(last_os[t]) for t=2:time], label="v_average")
+    savefig("AB_model/figs/v_average.png")
+
+    plot(2:time, zeros(time-1),label=nothing, color="white")
+    plot!(2:time, [sum(g[:,t]) for t=2:time], label="g")
+    plot!(2:time, [sum(c[:,:,t]) for t=2:time], label="c")
+    plot!(2:time, [sum(i[:,t]) for t=2:time], label="i")
+    plot!(2:time, [sum(g[:,t])+sum(c[:,:,t])+sum(i[:,t]) for t=2:time], label="y")
+    savefig("AB_model/figs/y_sum.png")
+
+    plot(2:time, zeros(time-1),label=nothing, color="white")
+    plot!(2:time, [sum(G[:,t]) for t=2:time], label="G")
+    plot!(2:time, [sum(C[:,:,t]) for t=2:time], label="C")
+    plot!(2:time, [sum(I[:,t]) for t=2:time], label="I")
+    plot!(2:time, [sum(G[:,t])+sum(C[:,:,t])+sum(I[:,t]) for t=2:time], label="Y")
+    savefig("AB_model/figs/Y_sum.png")
+
+    plot(2:time, [sum(H[:,t]) for t=2:time],label=nothing)
+    savefig("AB_model/figs/H_sum.png")
+
+    plot(2:time, [sum(A[last_os[t],t])/length(last_os[t]) for t=2:time],label=nothing)
+    savefig("AB_model/figs/A_average.png")
+
+    plot(2:time, zeros(time-1),label=nothing, color="white")
+    for o=1:OBuffer
+        plot!(2:time, [sum(k[o,t]) for t=2:time],label=nothing)
+    end
+    savefig("AB_model/figs/ks_whole_time.png")
+
     TIMERANGE = max(1,time-20):time
     ΔT = length(TIMERANGE)
 
     plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
     for o in last_os[end-1]
-        plot!(TIMERANGE, K[o,TIMERANGE], label=string(o))
+        plot!(TIMERANGE, K[o,TIMERANGE], label=string(o), legend=:outertopright)
     end
     savefig("AB_model/figs/Ks.png")
 
     plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
     for o in last_os[end-1]
-        plot!(TIMERANGE, i[o,TIMERANGE], label=string(o))
+        plot!(TIMERANGE, i[o,TIMERANGE], label=string(o), legend=:outertopright)
     end
     savefig("AB_model/figs/is.png")
 
     plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
     for o in last_os[end-1]
-        plot!(TIMERANGE, k[o,TIMERANGE], label=string(o))
+        plot!(TIMERANGE, k[o,TIMERANGE], label=string(o), legend=:outertopright)
     end
     savefig("AB_model/figs/ks.png")
 
     plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
     for o in last_os[end-1]
-        plot!(TIMERANGE, dropdims(sum(Mf[:,o,TIMERANGE],dims=1);dims=1), label=string(o))
+        plot!(TIMERANGE, dropdims(sum(Mf[:,o,TIMERANGE],dims=1);dims=1), label=string(o), legend=:outertopright)
     end
     savefig("AB_model/figs/Mfs.png")
 
     plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
     for o in last_os[end-1]
-        plot!(TIMERANGE, dropdims(sum(Lf[o,:,TIMERANGE],dims=1);dims=1), label=string(o))
+        plot!(TIMERANGE, dropdims(sum(Lf[o,:,TIMERANGE],dims=1);dims=1), label=string(o), legend=:outertopright)
     end
     savefig("AB_model/figs/Lfs.png")
 
     plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
     for o in last_os[end-1]
-        plot!(TIMERANGE, u[o,TIMERANGE],label=string(o))
+        plot!(TIMERANGE, u[o,TIMERANGE],label=string(o), legend=:outertopright)
     end
     savefig("AB_model/figs/u.png")
 
     plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
     for o in last_os[end-1]
-        plot!(TIMERANGE, dropdims(sum(c[o,:,TIMERANGE],dims=1);dims=1),label=string(o))
+        plot!(TIMERANGE, v[o,TIMERANGE],label=string(o), legend=:outertopright)
+    end
+    savefig("AB_model/figs/v.png")
+
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for o in last_os[end-1]
+        plot!(TIMERANGE, dropdims(sum(c[o,:,TIMERANGE],dims=1);dims=1),label=string(o), legend=:outertopright)
     end
     savefig("AB_model/figs/cfs.png")
 
     plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
     for o in last_os[end-1]
-        plot!(TIMERANGE, g[o,TIMERANGE],label=string(o))
+        plot!(TIMERANGE, g[o,TIMERANGE],label=string(o), legend=:outertopright)
     end
     savefig("AB_model/figs/gfs.png")
 
     plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
     for o in last_os[end-1]
-        plot!(TIMERANGE, p[o,TIMERANGE], label=string(o))
+        plot!(TIMERANGE, p[o,TIMERANGE], label=string(o), legend=:outertopright)
     end
     savefig("AB_model/figs/ps.png")
 
     plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
     for n=1:N
-        plot!(TIMERANGE, dropdims(sum(S[:,n,TIMERANGE],dims=1);dims=1), label=string(n))
+        plot!(TIMERANGE, dropdims(sum(S[:,n,TIMERANGE],dims=1);dims=1), label=string(n), legend=:outertopright)
     end
     savefig("AB_model/figs/S.png")
 
     plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
     for n=1:N
-        plot!(TIMERANGE, dropdims(sum(Pb[n,:,TIMERANGE],dims=1);dims=1), label=string(n))
+        plot!(TIMERANGE, dropdims(sum(Pb[n,:,TIMERANGE],dims=1);dims=1), label=string(n), legend=:outertopright)
     end
     savefig("AB_model/figs/Pb.png")
 
     plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
     for j=1:J
-        plot!(TIMERANGE, dropdims(sum(Ph[j,:,TIMERANGE],dims=1);dims=1), label=string(j))
+        plot!(TIMERANGE, dropdims(sum(Ph[j,:,TIMERANGE],dims=1);dims=1), label=string(j), legend=:outertopright)
     end
     savefig("AB_model/figs/Ph.png")
 
     plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
     for o in last_os[end-1]
-        plot!(TIMERANGE, Pf[o,TIMERANGE], label=string(o))
+        plot!(TIMERANGE, Pf[o,TIMERANGE], label=string(o), legend=:outertopright)
     end
     savefig("AB_model/figs/Pf.png")
 
     plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
     for o in last_os[end-1]
-        plot!(TIMERANGE, P[o,TIMERANGE], label=string(o))
+        plot!(TIMERANGE, P[o,TIMERANGE], label=string(o), legend=:outertopright)
     end
     savefig("AB_model/figs/P.png")
+
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for o in last_os[end-1]
+        plot!(TIMERANGE, A[o,TIMERANGE], label=string(o), legend=:outertopright)
+    end
+    savefig("AB_model/figs/A.png")
 end
 
 
