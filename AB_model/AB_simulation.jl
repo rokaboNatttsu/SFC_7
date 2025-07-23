@@ -2,14 +2,14 @@ using StatsPlots
 using StatsBase
 using Random
 
-J, O, N, TIME,  = 1000, 10, 3, 100
+J, O, N, TIME,  = 1000, 10, 3, 200
 Oin = 1
 OBuffer = O + TIME*Oin
 
 C, c, G, g, I, i = zeros(OBuffer, J, TIME), zeros(OBuffer, J, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME)
 w, W, Ti, Ta, Tv, Tc = zeros(J,TIME), zeros(J, OBuffer, TIME), zeros(J, TIME), zeros(J, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME)
 Ph, P, Pf, Pb = zeros(J, OBuffer, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME), zeros(N, OBuffer, TIME)
-S = zeros(J, N, TIME)
+S, ITh = zeros(J, N, TIME), zeros(J, TIME)
 NLh, NLf, NLb, NLg = zeros(J, TIME), zeros(OBuffer, TIME), zeros(N, TIME), zeros(TIME)
 p, pe, pf = zeros(OBuffer, TIME), zeros(OBuffer, TIME), zeros(N, TIME)
 eh, e, eb, Δeh, Δe, Δeb = zeros(OBuffer, J, TIME), zeros(OBuffer, TIME), zeros(OBuffer, N, TIME), zeros(OBuffer, J, TIME), zeros(OBuffer, TIME), zeros(OBuffer, N, TIME)
@@ -41,14 +41,15 @@ c_base = 0.1
 δ = 0.05
 ϵ1, ϵ2, ϵ3 = 1.0, 1.0, 0.1
 λ1, λ2, λ3, λ4, λ5, λ6, λ7, λ8, λ9 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3, 0.8
-τ1, τ2, τ3, τ4 = 0.3, 0.02, 0.1, 0.2
+τ1, τ2, τ3, τ4 = 0.25, 0.01, 0.1, 0.2
 μ1, μ2 = 0.0, 0.1
 ν1, ν2, ν3 = 0.35, 0.5, 1.0
 θ1, θ2 = 0.2, 0.02
 ϕ1, ϕ2 = 0.8, 1.0   # ϕ1<1-θ2
 ψ2, ψ3, ψ4 = 0.01, 1.0, 5.0
-ζ1, ζ2, ζ3, ζ4 = 0.05, 0.02, 0.04, 0.7
+ζ1, ζ2, ζ3, ζ4 = 0.05, 0.03, 0.05, 0.6 # ζ2*(1-ζ1)-ζ3*ζ1 > β1
 ξ1, ξ2 = 0.05, 0.05
+χ1, χ2 = 0.5, 0.7
 
 # 関数定義
 
@@ -81,7 +82,7 @@ function c_func(t)
     end
     r /= r[end]
     # 消費額を計算
-    Cs = α1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)-Ta[:,t]-Ti[:,t]-rL*dropdims(sum(Lh[:,:,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2)) 
+    Cs = α1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)-Ta[:,t]-Ti[:,t]-rL*dropdims(sum(Lh[:,:,t-1], dims=2);dims=2)+ITh[:,t-1]+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2))
         +α2*(dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
     Cs = max.(Cs, c_base*mean(p[os,t]))
     # 消費先の企業を選ぶ
@@ -479,12 +480,12 @@ function flotation(t) # 起業
         Δe[o,t] = cap_Mf
         Δeh[o,cap_j,t] = cap_Mf
         # 企業が価格のつかない資本を持つことに伴う変化
-        k[o,t] = 1.0*cap_Mf # 本当は他の企業の
+        p_mean = sum(p[os,t-1].*(dropdims(sum(c[os,:,t-1],dims=2);dims=2) + g[os,t-1]))./(sum(c[os,:,t-1]) + sum(g[os,t-1]))
+        k[o,t] = 1.0*cap_Mf/p_mean
         Awaight = dropdims(sum(c[os,:,t],dims=2);dims=2).+g[os,t]
         A[o,t] = sample(A[os,t-1], Weights(Awaight))
 
         # 希望価格
-        p_mean = sum(p[os,t-1].*(dropdims(sum(c[os,:,t-1],dims=2);dims=2) + g[os,t-1]))./(sum(c[os,:,t-1]) + sum(g[os,t-1]))
         p[o,t] = ν2*(1+ν1)*(w[work_j,t]+δ*k[o,t])/(uT*γ1*k[o,t])+(1-ν2)*p_mean
 
         # 生存企業のリストにIDを追加
@@ -502,7 +503,7 @@ function one_season(TIMERANGE)
     global Ti, Ta, Tv, Tc, w, W
     global g, G, c, C, i, I
     global k, K
-    global P, Ph, Pf, Pb, S
+    global P, Ph, Pf, Pb, S, ITh
     global A, u, DE, DF
     global NLh, NLf, NLb, NLg
     global Lh, Lf, L, ΔLh, ΔLf, ΔL
@@ -511,8 +512,7 @@ function one_season(TIMERANGE)
     global fh, f, Δfh, Δf, Fh, F
     global H, ΔH
     global NWh, NWf, NWb, NWg, NW
-    global last_os, O
-    global UER
+    global last_os, O, UER
 
     flotation_info = []
     for t=TIMERANGE
@@ -522,7 +522,7 @@ function one_season(TIMERANGE)
         #p[os,t] = ν2*(1.0+ν1).*(dropdims(sum(W[:,os,t-1], dims=1);dims=1)+Tv[os,t-1]+Tc[os,t-1]+rL*dropdims(sum(Lf[os,:,t-1],dims=2);dims=2)+δ*k[os,t-1])./(uT*γ1*k[os,t-1]).+(1-ν2)*p_mean
         p[os,t] = ν2*(1.0+ν1.+ν3.*(i[os,t-1]./(uT*γ1*k[os,t-1]))).*(dropdims(sum(W[:,os,t-1], dims=1);dims=1)+Tv[os,t-1]+Tc[os,t-1]+rL*dropdims(sum(Lf[os,:,t-1],dims=2);dims=2)+δ*k[os,t-1])./(uT*γ1*k[os,t-1]).+(1-ν2)*p_mean
         w_and_W_func(t, flotation_info)
-        Ti[:,t] = τ1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2))
+        Ti[:,t] = τ1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)+ITh[:,t-1]+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2))
         Ta[:,t] = τ2*(dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)+dropdims(sum(Fh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
         Tv[os,t] = τ3*(dropdims(sum(C[os,:,t-1], dims=2);dims=2)+I[os,t-1]+G[os,t-1])
         Tc[os,t] = max.(0.0, τ4*P[os,t-1])
@@ -539,6 +539,7 @@ function one_season(TIMERANGE)
         A[os,t] = A[os,t-1].*(1+μ1.+μ2*i[os,t-1]./k[os,t-1])
         k[os,t] = (1-δ).*k[os,t-1]+i[os,t]
         K[os,t] = p[os,t].*k[os,t]
+        ITh[:,t] = (χ1 .+ χ2*(EMP[:,t-1].==0))*sum(C[:,:,t-1])/J
         P[os,t] = dropdims(sum(C[os,:,t], dims=2);dims=2)+G[os,t]+I[os,t]-dropdims(sum(W[:,os,t], dims=1);dims=1)-Tv[os,t]-Tc[os,t]-rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)
         for o in os
             Ph[:,o,t] = max(0.0, θ1*(P[o,t]-I[o,t])+θ2*(sum(Mf[:,o,t-1])-sum(Lf[o,:,t-1]))).*eh[o,:,t-1]./e[o,t-1]
@@ -548,10 +549,10 @@ function one_season(TIMERANGE)
         for n=1:N
             S[:,n,t] = max.(0.0, θ1*(rL*L[n,t-1]+sum(Pb[n,os,t]))+θ2*sum(Eb[os,n,t-1])).*fh[n,:,t-1]/f[n,t-1]
         end
-        NLh[:,t] = -dropdims(sum(C[os,:,t], dims=1);dims=1) + dropdims(sum(W[:,os,t], dims=2);dims=2)-Ti[:,t]-Ta[:,t]-rL*dropdims(sum(Lh[:,:,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t], dims=2);dims=2)+dropdims(sum(S[:,:,t], dims=2);dims=2)
+        NLh[:,t] = -dropdims(sum(C[os,:,t], dims=1);dims=1) + dropdims(sum(W[:,os,t], dims=2);dims=2)-Ti[:,t]-Ta[:,t]-rL*dropdims(sum(Lh[:,:,t-1], dims=2);dims=2)+ITh[:,t]+dropdims(sum(Ph[:,os,t], dims=2);dims=2)+dropdims(sum(S[:,:,t], dims=2);dims=2)
         NLf[os,t] = -I[os,t] + Pf[os,t]
         NLb[:,t] = rL*(dropdims(sum(Lh[:,:,t-1],dims=1);dims=1).+dropdims(sum(Lf[os,:,t-1],dims=1);dims=1)) + dropdims(sum(Pb[:,os,t], dims=2);dims=2) - dropdims(sum(S[:,:,t], dims=1);dims=1)
-        NLg[t] = -sum(G[os,t])+sum(Ti[:,t])+sum(Ta[:,t])+sum(Tv[os,t])+sum(Tc[os,t])
+        NLg[t] = -sum(G[os,t])+sum(Ti[:,t])+sum(Ta[:,t])+sum(Tv[os,t])+sum(Tc[os,t])-sum(ITh[:,t])
         flotation_info, o_j_value_n_info, os_adds = flotation(t)   # 起業
         with_flo_os = cat(os, os_adds, dims=1)
         FR = dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ1*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)
@@ -768,9 +769,12 @@ function all_plot(time)
 
     plot(2:time, zeros(time-1),label=nothing, color="white")
     for o=1:OBuffer
-        plot!(2:time, [sum(k[o,t]) for t=2:time],label=nothing)
+        plot!(2:time, [k[o,t] for t=2:time],label=nothing)
     end
     savefig("AB_model/figs/ks_whole_time.png")
+
+    plot(2:time, [sum(k[:,t]) for t=2:time],label="k sum")
+    savefig("AB_model/figs/k_sum.png")
 
     plot(2:time, zeros(time-1),label=nothing, color="white")
     for o=1:OBuffer
@@ -893,20 +897,23 @@ function all_plot(time)
     end
     savefig("AB_model/figs/Mf_Lf_whole_time.png")
 
-    plot(2:time, [sum(W[:,:,t])-sum(Ti[:,t])-sum(Ta[:,t])-rL*sum(Lh[:,:,t-1])+sum(Ph[:,:,t])+sum(S[:,:,t]) for t=2:time],label="W-Ti-Ta-rL*Lh+Ph+S")
-    plot!(2:time, [sum(G[:,t]) for t=2:time],label="G")
-    plot!(2:time, [sum(C[:,:,t])+sum(G[:,t]) for t=2:time],label="C+G")
-    plot!(2:time, [sum(W[:,:,t]) for t=2:time],label="W")
-    plot!(2:time, [sum(C[:,:,t]) for t=2:time],label="C")
-    savefig("AB_model/figs/TMP.png")
-
     plot(2:time, [sum(Ti[:,t]) for t=2:time],label="Ti")
     plot!(2:time, [sum(Ta[:,t]) for t=2:time],label="Ta")
     plot!(2:time, [rL*sum(Lh[:,:,t-1]) for t=2:time],label="rL*Lh")
     plot!(2:time, [sum(W[:,:,t]) for t=2:time],label="W")
+    plot!(2:time, [sum(C[:,:,t]) for t=2:time],label="C")
+    plot!(2:time, [sum(ITh[:,t]) for t=2:time],label="ITh")
     plot!(2:time, [sum(Ph[:,:,t]) for t=2:time],label="Ph")
     plot!(2:time, [sum(S[:,:,t]) for t=2:time],label="S")
-    savefig("AB_model/figs/TMP2.png")
+    savefig("AB_model/figs/household_transaction.png")
+
+    plot(2:time, [sum(W[:,:,t])-sum(Ti[:,t])-sum(Ta[:,t])-rL*sum(Lh[:,:,t-1])+sum(ITh[:,t])+sum(Ph[:,:,t])+sum(S[:,:,t]) for t=2:time],label="W-Ti-Ta-rL*Lh+ITh+Ph+S")
+    plot!(2:time, [sum(G[:,t]) for t=2:time],label="G")
+    plot!(2:time, [sum(C[:,:,t])+sum(G[:,t]) for t=2:time],label="C+G")
+    plot!(2:time, [sum(W[:,:,t]) for t=2:time],label="W")
+    plot!(2:time, [sum(C[:,:,t]) for t=2:time],label="C")
+    plot!(2:time, [sum(ITh[:,t]) for t=2:time],label="ITh")
+    savefig("AB_model/figs/TMP.png")
 end 
 
 
