@@ -30,31 +30,31 @@ os = [o for o=1:O]
 last_os, drop_os = [deepcopy(os)], []
 UER = zeros(TIME)
 
-rL = 0.02
-G0 = 1.0*J
+rL = 0.03
+g0 = 1.0*J
 uT = 0.8
 c_base = 0.1
 
-α1, α2, α3, α4 = 0.8, 0.02, 2.0, 0.01
-β1, β2, β3, β4 = 0.02, 0.002, 0.05, 1.0 # 0.02, 0.02, 0.2, 2.0
-γ1, γ2 = 1.0, 0.2
+α1, α2, α3, α4 = 0.8, 0.02, 0.5, 0.01
+β1, β2, β3, β4 = 0.01, 0.001, 0.02, 1.0
+γ1, γ2 = 1.0, 0.3
 δ = 0.05
 ϵ1, ϵ2, ϵ3 = 1.0, 1.0, 0.1
-λ1, λ2, λ3, λ4, λ5, λ6, λ7, λ8, λ9 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3, 0.8
+λ1, λ2, λ3, λ4, λ5, λ6, λ7, λ8, λ9 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3, 0.8 # 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3, 0.8
 τ1, τ2, τ3, τ4 = 0.3, 0.02, 0.1, 0.2
 μ1, μ2 = 0.0, 0.1
-ν1, ν2 = 0.3, 0.5
-θ1, θ2 = 0.2, 0.1
+ν1, ν2, ν3 = 0.35, 0.5, 1.0
+θ1, θ2 = 0.2, 0.02
 ϕ1, ϕ2 = 0.8, 1.0   # ϕ1<1-θ2
 ψ2, ψ3, ψ4 = 0.01, 1.0, 5.0
-ζ1, ζ2, ζ3 = 0.1, 0.02, 0.04 # 0.05,0.02,0.04
+ζ1, ζ2, ζ3 = 0.05, 0.02, 0.04
 ξ1, ξ2 = 0.05, 0.05
 
 # 関数定義
 
 function g_func(t)
     global g, g_calc_item, g_potential
-    gsum = G0*(1+β1)^(t-1)
+    gsum = g0*(1+β1)^(t-1)
     g_calc_item .*= 1.0 .- β2 .+ β3*randn(O)
     g_calc_item = max.(1.0, g_calc_item)
     g_potential = max.(0.0, g_calc_item .- β4)
@@ -81,11 +81,12 @@ function c_func(t)
         +α2*(dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
     Cs = max.(Cs, c_base*mean(p[os,t]))
     # 消費先の企業を選ぶ
+    p_mean = sum(p[os,t-1].*(dropdims(sum(c[os,:,t-1],dims=2);dims=2) + g[os,t-1]))./(sum(c[os,:,t-1]) + sum(g[os,t-1]))
     for j=1:J
         # 前期の消費先の特定
         last_o = findall(x -> x > 0.0, c[:,j,t-1])[1]
         # 消費先変更するかどうかの決定
-        trans = rand() < α3*(p[last_o,t]-mean(p[os,t]))/p[last_o,t]
+        trans = rand() < α3*(p[last_o,t]-p_mean)/p_mean
         if !(last_o in os)
             trans = true
         end
@@ -172,7 +173,7 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
             EMP[j,t] = o
             w[j,t] = w[j,t-1]*(1+ζ2*abs(randn()))
             if (EMP[j,t-1] > 0) & (EMP[j,t-1] in os)
-                W[j,EMP[j,t-1],t] = v[EMP[j,t-1]]*w[j,t-1]
+                W[j,EMP[j,t-1],t] = v[EMP[j,t-1],t-1]*w[j,t-1]
             end
         end
     end
@@ -379,9 +380,10 @@ function ΔMf_and_Mf_func(t, o_j_value_n_info, os_adds)
 end
 
 function suply_line(t)
-    global g, c, i
+    global g, c, i, G
     for o in os
         if u[o,t]>1.0
+            G[o,t] /= u[o,t]
             g[o,t] /= u[o,t]
             c[o,:,t] ./= u[o,t]
             i[o,t] /= u[o,t]
@@ -398,10 +400,7 @@ function insolvency_disposition(t)
     drop_os = []
     while length(os) >= q
         o = os[q]
-        if (sum(Mf[:,o,t])<ϕ2*sum(Lf[o,:,t])) & (P[o,t]-I[o,t]<0.0) & (I[o,t] == 0.0)
-            println("P-1=$(P[o,t-1]), I-1=$(I[o,t-1]), C-1=$(sum(C[o,:,t-1])), G-1=$(G[o,t-1]), W-1=$(sum(W[:,o,t-1]))")
-            println("P=$(P[o,t]), I=$(I[o,t]), C=$(sum(C[o,:,t])), G=$(G[o,t]), W=$(sum(W[:,o,t]))")
-            println("Mf=$(sum(Mf[:,o,t])), Lf=$(sum(Lf[o,:,t]))")
+        if (sum(Mf[:,o,t])<ϕ2*sum(Lf[o,:,t])) & (P[o,t]-I[o,t]<0.0)
             setdiff!(os, o)
             deleteat!(g_calc_item, q)
             deleteat!(g_potential, q)
@@ -477,7 +476,7 @@ function flotation(t) # 起業
         A[o,t] = sample(A[os,t-1], Weights(Awaight))
 
         # 希望価格
-        p_mean = (sum(C[:,:,t-1]) + sum(G[:,t-1]))/(sum(c[:,:,t-1]) + sum(g[:,t-1]))
+        p_mean = sum(p[os,t-1].*(dropdims(sum(c[os,:,t-1],dims=2);dims=2) + g[os,t-1]))./(sum(c[os,:,t-1]) + sum(g[os,t-1]))
         p[o,t] = ν2*(1+ν1)*(w[work_j,t]+δ*k[o,t])/(uT*γ1*k[o,t])+(1-ν2)*p_mean
 
         # 生存企業のリストにIDを追加
@@ -511,16 +510,17 @@ function one_season(TIMERANGE)
     for t=TIMERANGE
         println("##################### t=",t," ######################")
 
-        p_mean = (sum(C[:,:,t-1]) + sum(G[:,t-1]))/(sum(c[:,:,t-1]) + sum(g[:,t-1]))
-        p[os,t] = ν2*(1+ν1).*(dropdims(sum(W[:,os,t-1], dims=1);dims=1)+Tv[os,t-1]+Tc[os,t-1]+δ*k[os,t-1])./(uT*γ1*k[os,t-1]).+(1-ν2)*p_mean
+        p_mean = sum(p[os,t-1].*(dropdims(sum(c[os,:,t-1],dims=2);dims=2) + g[os,t-1]))./(sum(c[os,:,t-1]) + sum(g[os,t-1]))
+        #p[os,t] = ν2*(1.0+ν1).*(dropdims(sum(W[:,os,t-1], dims=1);dims=1)+Tv[os,t-1]+Tc[os,t-1]+rL*dropdims(sum(Lf[os,:,t-1],dims=2);dims=2)+δ*k[os,t-1])./(uT*γ1*k[os,t-1]).+(1-ν2)*p_mean
+        p[os,t] = ν2*(1.0+ν1.+ν3.*(i[os,t-1]./(uT*γ1*k[os,t-1]))).*(dropdims(sum(W[:,os,t-1], dims=1);dims=1)+Tv[os,t-1]+Tc[os,t-1]+rL*dropdims(sum(Lf[os,:,t-1],dims=2);dims=2)+δ*k[os,t-1])./(uT*γ1*k[os,t-1]).+(1-ν2)*p_mean
         w_and_W_func(t, flotation_info)
         Ti[:,t] = τ1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2))
         Ta[:,t] = τ2*(dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)+dropdims(sum(Fh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
         Tv[os,t] = τ3*(dropdims(sum(C[os,:,t-1], dims=2);dims=2)+I[os,t-1]+G[os,t-1])
-        Tc[os,t] = max.(0.0, τ4*(dropdims(sum(C[os,:,t-1], dims=2);dims=2)+G[os,t-1]+I[os,t-1]-dropdims(sum(W[:,os,t-1], dims=1);dims=1)-Tv[os,t-1]))
+        Tc[os,t] = max.(0.0, τ4*P[os,t-1])
         g_func(t)
         c_func(t)
-        i[os,t] = max.(0.0, δ*k[os,t-1]+(u[os,t-1].-uT).*γ1.*k[os,t-1]+γ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))./p[os,t])
+        i[os,t] = max.(0.0, min.(δ*k[os,t-1]+(u[os,t-1].-uT).*γ1.*k[os,t-1], γ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))./p[os,t]))
         u[os,t] = (dropdims(sum(c[os,:,t], dims=2);dims=2)+i[os,t]+g[os,t])./(γ1*k[os,t-1])
         suply_line(t)
         G[os,t] = p[os,t].*g[os,t]
@@ -546,8 +546,8 @@ function one_season(TIMERANGE)
         NLg[t] = -sum(G[os,t])+sum(Ti[:,t])+sum(Ta[:,t])+sum(Tv[os,t])+sum(Tc[os,t])
         flotation_info, o_j_value_n_info, os_adds = flotation(t)   # 起業
         with_flo_os = cat(os, os_adds, dims=1)
-        FR = I[os,t]+dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ1*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)
-        Δe[os,t] = min.(max.(-λ7*e[os,t-1], 1/p[os,t-1]*(1-λ3.-λ4*((P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)).-rL)).*FR), λ8*e[os,t-1])
+        FR = dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ1*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)
+        Δe[os,t] = min.(max.(-λ7*e[os,t-1], 1/p[os,t-1]*(1-λ3.-λ4*((P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)).-rL)).*FR./pe[os,t-1]), λ8*e[os,t-1])
         ΔLf_and_Lf_func(t, FR.-pe[os,t-1].*Δe[os,t])
         E[:,t] = E[:,t-1] + pe[:,t-1].*Δe[:,t]
         e[:,t] = e[:,t-1] + Δe[:,t]
@@ -765,6 +765,12 @@ function all_plot(time)
     end
     savefig("AB_model/figs/ks_whole_time.png")
 
+    plot(2:time, zeros(time-1),label=nothing, color="white")
+    for o=1:OBuffer
+        plot!(2:time, [sum(g[o,t]) for t=2:time],label=nothing)
+    end
+    savefig("AB_model/figs/gfs_whole_time.png")
+
     TIMERANGE = max(1,time-20):time
     ΔT = length(TIMERANGE)
 
@@ -824,6 +830,12 @@ function all_plot(time)
 
     plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
     for o in last_os[end-1]
+        plot!(TIMERANGE, G[o,TIMERANGE],label=string(o), legend=:outertopright)
+    end
+    savefig("AB_model/figs/Gfs.png")
+
+    plot(TIMERANGE, zeros(ΔT),label=nothing, color="white")
+    for o in last_os[end-1]
         plot!(TIMERANGE, p[o,TIMERANGE], label=string(o), legend=:outertopright)
     end
     savefig("AB_model/figs/ps.png")
@@ -863,7 +875,17 @@ function all_plot(time)
         plot!(TIMERANGE, A[o,TIMERANGE], label=string(o), legend=:outertopright)
     end
     savefig("AB_model/figs/A.png")
-end
+
+    plot(2:time, [g0*(1+β1)^(t-1) for t=2:time], label="g demand")
+    plot!(2:time, [sum(g[:,t]) for t=2:time], label="g supply")
+    savefig("AB_model/figs/g_demand_and_supply.png")
+
+    plot(2:time, zeros(time-1),label=nothing, color="white")
+    for o=1:OBuffer
+        plot!(2:time, [sum(Mf[:,o,t])-sum(Lf[o,:,t]) for t=2:time], label=nothing)
+    end
+    savefig("AB_model/figs/Mf_Lf_whole_time.png")
+end 
 
 
 # 初期化
