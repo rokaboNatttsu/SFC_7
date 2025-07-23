@@ -25,43 +25,47 @@ u, v, A = zeros(OBuffer, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME)
 ΔZb, ΔZh, ΔZf = zeros(N, TIME), zeros(J, TIME), zeros(OBuffer, TIME)
 
 EMP = zeros(Int64, J,TIME)
-g_calc_item, g_potential = ones(O), ones(O)
+G_calc_item, G_potential = ones(O), ones(O)
 os = [o for o=1:O]
-last_os, drop_os = [deepcopy(os)], []
+last_os = [deepcopy(os)]
 UER = zeros(TIME)
 
 rL = 0.03
-g0 = 1.0*J
+G0 = 1.0*J
 uT = 0.8
 c_base = 0.1
 
-α1, α2, α3, α4 = 0.8, 0.02, 0.5, 0.01
-β1, β2, β3, β4 = 0.01, 0.001, 0.02, 1.0
+α1, α2, α3 = 0.9, 0.02, 0.5
+β1, β2, β3, β4, β5 = 0.02, 0.001, 0.02, 1.0, 0.7
 γ1, γ2 = 1.0, 0.3
 δ = 0.05
 ϵ1, ϵ2, ϵ3 = 1.0, 1.0, 0.1
-λ1, λ2, λ3, λ4, λ5, λ6, λ7, λ8, λ9 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3, 0.8 # 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3, 0.8
+λ1, λ2, λ3, λ4, λ5, λ6, λ7, λ8, λ9 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3, 0.8
 τ1, τ2, τ3, τ4 = 0.3, 0.02, 0.1, 0.2
 μ1, μ2 = 0.0, 0.1
 ν1, ν2, ν3 = 0.35, 0.5, 1.0
 θ1, θ2 = 0.2, 0.02
 ϕ1, ϕ2 = 0.8, 1.0   # ϕ1<1-θ2
 ψ2, ψ3, ψ4 = 0.01, 1.0, 5.0
-ζ1, ζ2, ζ3 = 0.05, 0.02, 0.04
+ζ1, ζ2, ζ3, ζ4 = 0.05, 0.02, 0.04, 0.7
 ξ1, ξ2 = 0.05, 0.05
 
 # 関数定義
 
-function g_func(t)
-    global g, g_calc_item, g_potential
-    gsum = g0*(1+β1)^(t-1)
-    g_calc_item .*= 1.0 .- β2 .+ β3*randn(O)
-    g_calc_item = max.(1.0, g_calc_item)
-    g_potential = max.(0.0, g_calc_item .- β4)
-    if sum(g_potential)==0.0
-        g_potential[sample(1:O)] = 1.0
+function G_func(t)
+    global G, G_calc_item, G_potential
+    Gsum = G0*(1+β1)^(t-1)
+    G_calc_item .*= 1.0 .- β2 .+ β3*randn(O)
+    G_calc_item = max.(1.0, G_calc_item)
+    if t == 1
+        G_potential = max.(0.0, G_calc_item .- β4)
+    else
+        G_potential = max.(0.0, G_calc_item .- β4) .* k[os,t-1].^β5
     end
-    g[os,t] = g_potential.*gsum/sum(g_potential)
+    if sum(G_potential)==0.0
+        G_potential[sample(1:O)] = 1.0
+    end
+    G[os,t] = G_potential.*Gsum/sum(G_potential)
 end
 
 function c_func(t)
@@ -70,9 +74,9 @@ function c_func(t)
     r = zeros(O)
     for (q, o) in enumerate(os)
         if q==1
-            r[1] = sum(c[1,:,t-1])+α4*(sum(c[os,:,t-1])+sum(g[os,t-1]))/J
+            r[1] = sum(c[os,:,t-1])+sum(g[os,t-1])
         else
-            r[q] = sum(c[o,:,t-1])+α4*(sum(c[os,:,t-1])+sum(g[os,t-1]))/J + r[q-1]
+            r[q] = sum(c[os,:,t-1])+sum(g[os,t-1]) + r[q-1]
         end
     end
     r /= r[end]
@@ -100,6 +104,15 @@ function c_func(t)
     end
 end
 
+function appli_j(j, prob, appli)
+    if prob[end] == 0.0 # 募集がなければパス
+        return
+    end
+    # 応募先を割り振る
+    q = 1+searchsortedlast(prob, rand())
+    push!(appli[q], j)
+end
+
 function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
     global w, W, EMP, v
     flotations_js = [info[2] for info in flotation_info]
@@ -123,9 +136,14 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
     for j=1:J
         if EMP[j,t-1] > 0 # 前期就業していた人
             if !(EMP[j,t-1] in os)  # 勤め先が倒産した場合
-                continue
+                if rand() < ζ4
+                    appli_j(j, prob, appli) # 応募先を割り振る
+                end
             elseif rand() < ζ1 # 今期失業する場合
                 W[j,EMP[j,t-1],t] = v[EMP[j,t-1],t-1]*w[j,t-1]
+                if rand() < ζ4
+                    appli_j(j, prob, appli) # 応募先を割り振る
+                end
             else # 今期も同じ企業で就業する場合
                 EMP[j,t] = EMP[j,t-1]
                 w[j,t] = w[j,t-1]*(1+ζ2*abs(randn()))
@@ -141,12 +159,7 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
                 end
             end
         else # 前期失業していた人
-            if prob[end] == 0.0 # 募集がなければパス
-                continue
-            end
-            # 応募先を割り振る
-            q = 1+searchsortedlast(prob, rand())
-            push!(appli[q], j)
+            appli_j(j, prob, appli) # 応募先を割り振る
         end
     end
     # マッチング
@@ -160,21 +173,11 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
             end
         end
     end
-    # 従業員が0にならないように対策
+    # 従業員が0になった企業を倒産させる
     s = Set(EMP[:,t])
-    UE = findall(x -> x == 0, EMP[:,t])
-    if length(UE)==0
-        return
-    end
-    for o in os
+    for (q,o) in enumerate(os)
         if !(o in s)
-            j = sample(UE)
-            setdiff!(UE, [j])
-            EMP[j,t] = o
-            w[j,t] = w[j,t-1]*(1+ζ2*abs(randn()))
-            if (EMP[j,t-1] > 0) & (EMP[j,t-1] in os)
-                W[j,EMP[j,t-1],t] = v[EMP[j,t-1],t-1]*w[j,t-1]
-            end
+            bankruptcy(t-1,o,q)
         end
     end
     # 失業者の要求賃金率を下げる
@@ -187,10 +190,8 @@ end
 
 function Lh_func(t, with_flo_os)
     global Lh
-    #tmp = (dropdims(sum(C[:,:,t], dims=1);dims=1)+Ta[:,t]+Ti[:,t]+rL*dropdims(sum(Lh[:,:,t-1],dims=2);dims=2)) - dropdims(sum(Mh[:,:,t-1],dims=1);dims=1)
     tmp = -(dropdims(sum(Mh[:,:,t-1],dims=1);dims=1) .+ NLh[:,t] 
             .- [sum(pe[with_flo_os,t-1].*Δeh[with_flo_os,j,t]) for j=1:J] .- [sum(pf[:,t-1].*Δfh[:,j,t]) for j=1:J])
-    #        .+ [sum(pe[drop_os,t-1].*Δeh[drop_os,j,t]) for j=1:J] .+ [sum(pf[:,t-1].*Δfh[:,j,t]) for j=1:J])
     tmp[tmp .< 0.0] .*= 1.0 - ϵ3 # 支払いのための預金が足りるとき
     tmp[tmp .> 0.0] .*= 1.0 + ϵ3 # 預金が不足するとき
     Lhs = max.(0.0, ϵ1*NLh[:,t] + ϵ2*dropdims(sum(C[with_flo_os,:,t], dims=1);dims=1), dropdims(sum(Lh[:,:,t-1],dims=2);dims=2)+tmp)
@@ -392,35 +393,42 @@ function suply_line(t)
     end
 end
 
-function insolvency_disposition(t)
-    global os, EMP, g_calc_item, g_potential, O, drop_os
+function bankruptcy(t, o, q)
+    global os, EMP, G_calc_item, G_potential, O
     global ΔMf, ΔLf, Δe, Δeh, Δeb
     global ΔZb, ΔZh, ΔZf
+    setdiff!(os, o)
+    deleteat!(G_calc_item, q)
+    deleteat!(G_potential, q)
+    EMP[EMP[:,t].==o, t] .= 0
+    if t<TIME
+        nMf = findall(x -> x > 0.0, Mf[:,o,t])[1]
+        nLf = findall(x -> x > 0.0, Lf[o,:,t])
+        if length(nLf)==0
+            nLf = nMf
+        else
+            nLf = nLf[1]
+        end
+        ΔMf[nMf,o,t+1] = -Mf[nMf,o,t]
+        ΔLf[o,nLf,t+1] = -Lf[o,nLf,t]
+        Δe[o,t+1] = -e[o,t]
+        Δeh[o,:,t+1] = -eh[o,:,t]
+        Δeb[o,:,t+1] = -eb[o,:,t]
+        ΔZf[o,t+1] += pe[o,t]*Δe[o,t+1] - ΔMf[nMf,o,t+1] + ΔLf[o,nLf,t+1]
+        ΔZb[nMf,t+1] += ΔMf[nMf,o,t+1]
+        ΔZb[nLf,t+1] -= ΔLf[o,nLf,t+1]
+        ΔZb[:,t+1] -= pe[o,t]*Δeb[o,:,t+1]
+        ΔZh[:,t+1] -= pe[o,t]*Δeh[o,:,t+1]
+    end
+    O -= 1
+end
+
+function fund_shortage_bankruptcy(t)
     q = 1
-    drop_os = []
     while length(os) >= q
         o = os[q]
         if (sum(Mf[:,o,t])<ϕ2*sum(Lf[o,:,t])) & (P[o,t]-I[o,t]<0.0)
-            setdiff!(os, o)
-            deleteat!(g_calc_item, q)
-            deleteat!(g_potential, q)
-            EMP[EMP[:,t].==o, t] .= 0
-            if t<TIME
-                nMf = findall(x -> x > 0.0, Mf[:,o,t])[1]
-                nLf = findall(x -> x > 0.0, Lf[o,:,t])[1]
-                ΔMf[nMf,o,t+1] = -Mf[nMf,o,t]
-                ΔLf[o,nLf,t+1] = -Lf[o,nLf,t]
-                Δe[o,t+1] = -e[o,t]
-                Δeh[o,:,t+1] = -eh[o,:,t]
-                Δeb[o,:,t+1] = -eb[o,:,t]
-                ΔZf[o,t+1] += pe[o,t]*Δe[o,t+1] - ΔMf[nMf,o,t+1] + ΔLf[o,nLf,t+1]
-                ΔZb[nMf,t+1] += ΔMf[nMf,o,t+1]
-                ΔZb[nLf,t+1] -= ΔLf[o,nLf,t+1]
-                ΔZb[:,t+1] -= pe[o,t]*Δeb[o,:,t+1]
-                ΔZh[:,t+1] -= pe[o,t]*Δeh[o,:,t+1]
-            end
-            O -= 1
-            push!(drop_os, o)
+            bankruptcy(t,o,q)
         else
             q += 1
         end
@@ -428,7 +436,7 @@ function insolvency_disposition(t)
 end
 
 function flotation(t) # 起業
-    global g_calc_item, g_potential
+    global G_calc_item, G_potential
     global ΔMh, ΔMf
     global Δe, Δeh
     global k, pe, p, A
@@ -483,8 +491,8 @@ function flotation(t) # 起業
         push!(os_adds, o)
     end
     # 政府支出受注額決定のための配列を更新
-    append!(g_calc_item, [1.0 for _=1:floation_count])
-    append!(g_potential, [0.0 for _=1:floation_count])
+    append!(G_calc_item, [1.0 for _=1:floation_count])
+    append!(G_potential, [0.0 for _=1:floation_count])
 
     return floations_info, o_j_value_n_info, os_adds
 end
@@ -518,12 +526,12 @@ function one_season(TIMERANGE)
         Ta[:,t] = τ2*(dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)+dropdims(sum(Fh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
         Tv[os,t] = τ3*(dropdims(sum(C[os,:,t-1], dims=2);dims=2)+I[os,t-1]+G[os,t-1])
         Tc[os,t] = max.(0.0, τ4*P[os,t-1])
-        g_func(t)
+        G_func(t)
+        g[os,t] = G[os,t]./p[os,t]
         c_func(t)
         i[os,t] = max.(0.0, min.(δ*k[os,t-1]+(u[os,t-1].-uT).*γ1.*k[os,t-1], γ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))./p[os,t]))
         u[os,t] = (dropdims(sum(c[os,:,t], dims=2);dims=2)+i[os,t]+g[os,t])./(γ1*k[os,t-1])
         suply_line(t)
-        G[os,t] = p[os,t].*g[os,t]
         for o in os
             C[o,:,t] = p[o,t]*c[o,:,t]
         end
@@ -601,11 +609,10 @@ function one_season(TIMERANGE)
         append!(os, os_adds)
         O += length(os_adds)
         push!(last_os, deepcopy(os))
-        insolvency_disposition(t)   # 倒産処理
+        fund_shortage_bankruptcy(t)   # 資金繰りが理由の倒産処理
 
         UER[t] = sum(EMP[:,t].==0)/J
-        #println(drop_os)
-        if t%10==0
+        if t%50==0
             all_plot(t)
         end
     end
@@ -621,7 +628,7 @@ function initialise()
     global NWh, NWf, NWb, NWg, NW
 
     for _=1:10
-        g_func(1)
+        G_func(1)
     end
 
     lstj, lsto, lstn = zeros(J), zeros(O), zeros(N)
@@ -876,15 +883,30 @@ function all_plot(time)
     end
     savefig("AB_model/figs/A.png")
 
-    plot(2:time, [g0*(1+β1)^(t-1) for t=2:time], label="g demand")
-    plot!(2:time, [sum(g[:,t]) for t=2:time], label="g supply")
-    savefig("AB_model/figs/g_demand_and_supply.png")
+    plot(2:time, [G0*(1+β1)^(t-1) for t=2:time], label="G demand")
+    plot!(2:time, [sum(G[:,t]) for t=2:time], label="G supply")
+    savefig("AB_model/figs/G_demand_and_supply.png")
 
     plot(2:time, zeros(time-1),label=nothing, color="white")
     for o=1:OBuffer
         plot!(2:time, [sum(Mf[:,o,t])-sum(Lf[o,:,t]) for t=2:time], label=nothing)
     end
     savefig("AB_model/figs/Mf_Lf_whole_time.png")
+
+    plot(2:time, [sum(W[:,:,t])-sum(Ti[:,t])-sum(Ta[:,t])-rL*sum(Lh[:,:,t-1])+sum(Ph[:,:,t])+sum(S[:,:,t]) for t=2:time],label="W-Ti-Ta-rL*Lh+Ph+S")
+    plot!(2:time, [sum(G[:,t]) for t=2:time],label="G")
+    plot!(2:time, [sum(C[:,:,t])+sum(G[:,t]) for t=2:time],label="C+G")
+    plot!(2:time, [sum(W[:,:,t]) for t=2:time],label="W")
+    plot!(2:time, [sum(C[:,:,t]) for t=2:time],label="C")
+    savefig("AB_model/figs/TMP.png")
+
+    plot(2:time, [sum(Ti[:,t]) for t=2:time],label="Ti")
+    plot!(2:time, [sum(Ta[:,t]) for t=2:time],label="Ta")
+    plot!(2:time, [rL*sum(Lh[:,:,t-1]) for t=2:time],label="rL*Lh")
+    plot!(2:time, [sum(W[:,:,t]) for t=2:time],label="W")
+    plot!(2:time, [sum(Ph[:,:,t]) for t=2:time],label="Ph")
+    plot!(2:time, [sum(S[:,:,t]) for t=2:time],label="S")
+    savefig("AB_model/figs/TMP2.png")
 end 
 
 
