@@ -2,7 +2,7 @@ using StatsPlots
 using StatsBase
 using Random
 
-J, O, N, TIME,  = 1000, 10, 3, 250
+J, O, N, TIME,  = 1000, 10, 3, 200
 Oin = 1
 OBuffer = O + TIME*Oin
 
@@ -39,7 +39,7 @@ uT = 0.8
 γ1, γ2 = 1.0, 0.3
 δ = 0.05
 ϵ1, ϵ2, ϵ3 = 1.0, 1.0, 0.1
-λ1, λ2, λ3, λ4, λ5, λ6, λ7, λ8, λ9 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3, 0.8
+λ1, λ2, λ3, λ4, λ5, λ6, λ7, λ8, λ9, λ10 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3, 0.8, 0.5
 τ1, τ2, τ3, τ4 = 0.25, 0.01, 0.1, 0.2
 μ1, μ2 = 0.0, 0.1
 ν1, ν2, ν3 = 0.35, 0.5, 1.0
@@ -295,9 +295,9 @@ function Eb_func(t)
         prob = index.*abs.(1.0.+ψ4*randn(O)) + Eb[os,n,t-1]/(sum(Eb[os,n,t-1]))
         prob /= sum(prob)
         # 収益率から、保有する株式の総額目標を決定
-        EF_volume = (sum(Eb[os,n,t-1])+NLb[n,t])*(1.0-rL.+λ6*(sum(Pb[n,os,t])/sum(Eb[os,n,t-1]).-rL))
+        E_volume = (sum(Eb[os,n,t-1])+NLb[n,t])*(1.0-rL.+λ6*(sum(Pb[n,os,t])/sum(Eb[os,n,t-1]).-rL))
         # ポートフォリオ決定
-        Eb[os,n,t] = EF_volume*prob
+        Eb[os,n,t] = E_volume*prob
     end
 end
 
@@ -327,16 +327,6 @@ function ΔMh_and_Mh_func(t, with_flo_os)
         else
             Mh[last_n,j,t] = Mh[last_n,j,t-1] + ΔMh_sum
             ΔMh[last_n,j,t] = ΔMh_sum
-        end
-        if sum(Mh[:,j,t]) <= 0.0
-            println("j=",j)
-            println("Mh=",Mh[:,j,t],", Lh=",Lh[j,:,t])
-            println("NLh=",NLh[j,t],", peΔeh=",sum(pe[with_flo_os,t-1].*Δeh[with_flo_os,j,t]),", pfΔfh=",sum(pf[:,t-1].*Δfh[:,j,t]),", ΔLh=", sum(ΔLh[j,:,t]))
-            println("ΔMh_sum=",ΔMh_sum)
-            tmp1 = -(dropdims(sum(Mh[:,:,t-1],dims=1);dims=1) .+ NLh[:,t] .- [sum(pe[os,t-1].*Δeh[os,j,t]) for j=1:J] .- [sum(pf[:,t-1].*Δfh[:,j,t]) for j=1:J])
-            tmp2 = ϵ1*NLh[:,t] + ϵ2*dropdims(sum(C[os,:,t], dims=1);dims=1)
-            println("tmp1=",tmp1[j])
-            println("tmp2=",tmp2[j])
         end
     end
 end
@@ -471,8 +461,7 @@ function flotation(t) # 起業
         for n=1:N
             if Mh[n,cap_j,t-1] > 0.0
                 # 企業の預金増加に伴う変化
-                cap_Mf = 0.5*Mh[n,cap_j,t-1]
-                #ΔMh[n,cap_j,t] -= cap_Mf
+                cap_Mf = λ10*Mh[n,cap_j,t-1]
                 ΔMf[n,o,t] = cap_Mf   # 資本家と企業が同じ銀行に口座を持つこととする
 
                 # 投資した家計の情報を追加
@@ -486,12 +475,9 @@ function flotation(t) # 起業
         Δeh[o,cap_j,t] = cap_Mf
         # 企業が価格のつかない資本を持つことに伴う変化
         p_mean = sum(p[os,t-1].*(dropdims(sum(c[os,:,t-1],dims=2);dims=2) + g[os,t-1]))./(sum(c[os,:,t-1]) + sum(g[os,t-1]))
-        k[o,t] = 1.0*cap_Mf/p_mean
+        k[o,t] = cap_Mf/p_mean
         Awaight = dropdims(sum(c[os,:,t],dims=2);dims=2).+g[os,t]
         A[o,t] = sample(A[os,t-1], Weights(Awaight))
-
-        # 希望価格
-        p[o,t] = ν2*(1+ν1)*(w[work_j,t]+δ*k[o,t])/(uT*γ1*k[o,t])+(1-ν2)*p_mean
 
         # 生存企業のリストにIDを追加
         push!(os_adds, o)
@@ -560,7 +546,7 @@ function one_season(TIMERANGE)
         flotation_info, o_j_value_n_info, os_adds = flotation(t)   # 起業
         with_flo_os = cat(os, os_adds, dims=1)
         FR = dropdims(sum(W[:,os,t], dims=1);dims=1)+Tv[os,t]+Tc[os,t]+rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)-ϕ1*dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)
-        Δe[os,t] = min.(max.(-λ7*e[os,t-1], 1/p[os,t-1]*(1-λ3.-λ4*((P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)).-rL)).*FR./pe[os,t-1]), λ8*e[os,t-1])
+        Δe[os,t] = min.(max.(-λ7*e[os,t-1], (λ3.+λ4*(rL.-(P[os,t]-Pf[os,t])./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)))).*FR./pe[os,t-1]), λ8*e[os,t-1])
         ΔLf_and_Lf_func(t, FR.-pe[os,t-1].*Δe[os,t])
         E[:,t] = E[:,t-1] + pe[:,t-1].*Δe[:,t]
         e[:,t] = e[:,t-1] + Δe[:,t]
