@@ -341,7 +341,7 @@ function ΔMf_and_Mf_func(t, o_j_value_n_info, os_adds)
         prob /= sum(prob)
     end
     for (x, o) in enumerate(os)
-        ΔMf_sum = NLf[o,t]+sum(ΔLf[o,:,t])+sum(pe[o,t-1].*Δe[o,t])
+        ΔMf_sum = NLf[o,t]+sum(ΔLf[o,:,t])+pe[o,t-1].*Δe[o,t]
         last_n = 0
         if o in os
             for n=1:N
@@ -407,7 +407,7 @@ function bankruptcy(t, o, q)
         Δe[o,t+1] = -e[o,t]
         Δeh[o,:,t+1] = -eh[o,:,t]
         Δeb[o,:,t+1] = -eb[o,:,t]
-        ΔZf[o,t+1] += pe[o,t]*Δe[o,t+1] - ΔMf[nMf,o,t+1] + ΔLf[o,nLf,t+1]
+        ΔZf[o,t+1] = pe[o,t]*Δe[o,t+1] - ΔMf[nMf,o,t+1] + ΔLf[o,nLf,t+1]
         ΔZb[nMf,t+1] += ΔMf[nMf,o,t+1]
         ΔZb[nLf,t+1] -= ΔLf[o,nLf,t+1]
         ΔZb[:,t+1] -= pe[o,t]*Δeb[o,:,t+1]
