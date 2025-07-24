@@ -35,7 +35,7 @@ randn() : 標準化された正規分布で確率分布が表される乱数か�
 
 計算順に式を一覧する
 
-1. $p^o=\nu_2(1+\nu_1+\nu_3\frac{i^o_{-1}}{u^T \gamma_1 k^o_{-1}})\frac{\sum_j W^{j,o}_{-1}+T^o_{v-1}+T^o_{c-1}+r_L\sum_n L^{o,n}_{f-1}+\delta k^o_{-1}}{u^T \gamma_1 k^o_{-1}} + (1-\nu_2)\bar{p}$
+1. $p^o=\nu_2(1+\nu_1+\nu_3\frac{i_{-1}^o}{u^T \gamma_1 k_{-1}^o})\frac{\sum_j W_{-1}^{j,o}+T_{v-1}^o+T_{c-1}^o+r_L\sum_n L_{f-1}^{o,n}+\delta k_{-1}^o}{u^T \gamma_1 k_{-1}^o} + (1-\nu_2)\bar{p}$
    1. ここで、 $\bar{p}=\frac{\sum_o p^o_{-1}(\sum_j c^{o,j}_{-1} + g^o_{-1})}{\sum_o(\sum_j c^{o,j}_{-1}+g^o_{-1})}$
 2. 就業・失業判定、賃金率と賃金の決定のアルゴリズム
    1. 前期の労働稼働率が１より大きいときは、労働稼働率が１になる水準の求人を出す
@@ -82,11 +82,11 @@ randn() : 標準化された正規分布で確率分布が表される乱数か�
 19. 政府から家計への所得移転
     1.  失業しているとき $IT^j_h=(1+\chi_1+\chi_2) \frac{\sum_j\sum_o C^{o,j}_{-1}}{J}$
     2.  就業しているとき $IT^j_h=(1+\chi_1) \frac{\sum_j\sum_o C^{o,j}_{-1}}{J}$
-21. $P^o=\sum_j C^{o,j}+G^o+I^o-\sum_j W^{j,o}-T_c^o-T_v^o-r_L \sum_n L_{f-1}^{o,n}$
-22. $P_h^{j,o}=\max\{0, \theta_1(P^o-I^o)+\theta_2(\sum_n M_{f-1}^{o,n}-\sum_n L_{f-1}^{o,n})\}\frac{e_{h-1}^{o,j}}{e_{-1}^o}$
-23. $P_b^{n,o}=\max\{0, \theta_1(P^o-I^o)+\theta_2(\sum_n M_{f-1}^{o,n}-\sum_n L_{f-1}^{o,n})\}\frac{e_{b-1}^{o,n}}{e_{-1}^o}$
-24. $P_f^o=P^o-\sum_j P_h^{j,o}-\sum_n P_b^{n,o}$
-25. $S^{j,n}=\max[\{\theta_1(r_L L_{-1}^n+\sum_o P_b^{n,o})+\theta_2 \sum_o E_{b-1}^{o,n}\}\frac{f_{h-1}^{j,n}}{f_{-1}^n}]$
+20. $P^o=\sum_j C^{o,j}+G^o+I^o-\sum_j W^{j,o}-T_c^o-T_v^o-r_L \sum_n L_{f-1}^{o,n}$
+21. $P_h^{j,o}=\max\{0, \theta_1(P^o-I^o)+\theta_2(\sum_n M_{f-1}^{o,n}-\sum_n L_{f-1}^{o,n})\}\frac{e_{h-1}^{o,j}}{e_{-1}^o}$
+22. $P_b^{n,o}=\max\{0, \theta_1(P^o-I^o)+\theta_2(\sum_n M_{f-1}^{o,n}-\sum_n L_{f-1}^{o,n})\}\frac{e_{b-1}^{o,n}}{e_{-1}^o}$
+23. $P_f^o=P^o-\sum_j P_h^{j,o}-\sum_n P_b^{n,o}$
+24. $S^{j,n}=\max[\{\theta_1(r_L L_{-1}^n+\sum_o P_b^{n,o})+\theta_2 \sum_o E_{b-1}^{o,n}\}\frac{f_{h-1}^{j,n}}{f_{-1}^n}]$
 - 
 - ここから説明更新
 - 
