@@ -33,9 +33,8 @@ UER = zeros(TIME)
 rL = 0.03
 G0 = 1.0*J
 uT = 0.8
-c_base = 0.1
 
-α1, α2, α3 = 0.9, 0.02, 0.5
+α1, α2, α3, α4 = 0.9, 0.02, 0.5, 0.01
 β1, β2, β3, β4, β5 = 0.02, 0.001, 0.02, 1.0, 0.7
 γ1, γ2 = 1.0, 0.3
 δ = 0.05
@@ -84,7 +83,11 @@ function c_func(t)
     # 消費額を計算
     Cs = α1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)-Ta[:,t]-Ti[:,t]-rL*dropdims(sum(Lh[:,:,t-1], dims=2);dims=2)+ITh[:,t-1]+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2))
         +α2*(dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
-    Cs = max.(Cs, c_base*mean(p[os,t]))
+    Cs = max.(Cs, α4*sum(C[:,:,t-1])/J)
+    #Cs = max.(Cs, α4*mean(p[os,t]))
+    if t==2
+        Cs = max.(Cs, α4)
+    end
     # 消費先の企業を選ぶ
     p_mean = sum(p[os,t-1].*(dropdims(sum(c[os,:,t-1],dims=2);dims=2) + g[os,t-1]))./(sum(c[os,:,t-1]) + sum(g[os,t-1]))
     for j=1:J
@@ -117,7 +120,6 @@ end
 function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
     global w, W, EMP, v
     flotations_js = [info[2] for info in flotation_info]
-    flotations_os = [info[3] for info in flotation_info]
     # 求人数を作る
     offers = [Int64(round(max(0, (u[o,t-1]*k[o,t-1]-A[o,t-1]*sum(w[:,t-1].==o))/A[o,t-1]))) for o in os]
     # 応募確率を作る
@@ -151,7 +153,6 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
                 W[j,EMP[j,t-1],t] = v[EMP[j,t-1],t-1]*w[j,t-1]
             end
         elseif j in flotations_js # 起業メンバー
-            #EMP[j,t-1] = flotations_os[x]
             EMP[j,t] = EMP[j,t-1]
             w[j,t] = w[j,t-1]*(1+ζ2*abs(randn()))
         else # 前期失業していた人
@@ -523,14 +524,8 @@ function one_season(TIMERANGE)
         println("##################### t=",t," ######################")
 
         p_mean = sum(p[os,t-1].*(dropdims(sum(c[os,:,t-1],dims=2);dims=2) + g[os,t-1]))./(sum(c[os,:,t-1]) + sum(g[os,t-1]))
-        #p[os,t] = ν2*(1.0+ν1).*(dropdims(sum(W[:,os,t-1], dims=1);dims=1)+Tv[os,t-1]+Tc[os,t-1]+rL*dropdims(sum(Lf[os,:,t-1],dims=2);dims=2)+δ*k[os,t-1])./(uT*γ1*k[os,t-1]).+(1-ν2)*p_mean
         p[os,t] = ν2*(1.0+ν1.+ν3.*(i[os,t-1]./(uT*γ1*k[os,t-1]))).*(dropdims(sum(W[:,os,t-1], dims=1);dims=1)+Tv[os,t-1]+Tc[os,t-1]+rL*dropdims(sum(Lf[os,:,t-1],dims=2);dims=2)+δ*k[os,t-1])./(uT*γ1*k[os,t-1]).+(1-ν2)*p_mean
         w_and_W_func(t, flotation_info)
-        for o in os
-            if sum(EMP[:,t].==o)==0
-                println("2, o=$o")
-            end
-        end
         Ti[:,t] = τ1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)+ITh[:,t-1]+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2))
         Ta[:,t] = τ2*(dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)+dropdims(sum(Fh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
         Tv[os,t] = τ3*(dropdims(sum(C[os,:,t-1], dims=2);dims=2)+I[os,t-1]+G[os,t-1])
