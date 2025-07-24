@@ -6,6 +6,8 @@
 
 # 1. 問題とTODO
 
+優先順に番号を振っている
+
 1. jlファイルの変更をmain.mdに反映させる・説明追加
 
 # 2. 推奨実行環境
@@ -26,63 +28,69 @@
 変数の右上につけて、どのエージェントとどのエージェントの取引もしくは貸借関係なのかを区別する
 
 # 4. モデルの式とアルゴリズム
-- $p_{mean}=\frac{\sum_o p^o_{-1}(\sum_j c^{o,j}_{-1} + g^o_{-1})}{\sum_o\sum_j c^{o,j}_{-1}+g^o_{-1}}$
-- $p^o=\nu_2(1+\nu_1+\nu_3\frac{i^o_{-1}}{u^T \gamma_1k^o_{-1}})\frac{\sum_j W^{j,o}_{-1}+T^o_{v-1}+T^o_{c-1}+r_L\sum_n L^{o,n}_{f-1}+\delta k^o_{-1}}{u^T \gamma_1 k^o_{-1}} + (1-\nu_2)p_{mean}$
+
+変数の定義を兼ねた、会計的整合性を表す表は、matrix.mdに記載している。
+
+randn() : 標準化された正規分布で確率分布が表される乱数からのサンプル
+
+計算順に式を一覧する
+
+1. $p_{mean}=\frac{\sum_o p^o_{-1}(\sum_j c^{o,j}_{-1} + g^o_{-1})}{\sum_o\sum_j c^{o,j}_{-1}+g^o_{-1}}$
+2. $p^o=\nu_2(1+\nu_1+\nu_3\frac{i^o_{-1}}{u^T \gamma_1k^o_{-1}})\frac{\sum_j W^{j,o}_{-1}+T^o_{v-1}+T^o_{c-1}+r_L\sum_n L^{o,n}_{f-1}+\delta k^o_{-1}}{u^T \gamma_1 k^o_{-1}} + (1-\nu_2)p_{mean}$
+3. 就業・失業判定、賃金率と賃金の決定のアルゴリズム
+   1. 前期の労働稼働率が１より大きいときは、労働稼働率が１になる水準の求人を出す
+   2. 前期就業していた人の一定割合はその企業での就業を続行
+   3. 前期就業していた人のうち、勤め先が倒産した人は、一定確立で即座に求人に応募する
+   4. 前期就業していて勤め先が倒産していない人のうち、一定割合がその仕事をやめ、一定確立で即座に求人に応募
+   5. 前期失業していた人の中からランダムで、起業する
+   6. 前期失業していて企業もしない人は、求人に応募する。応募先は求人数に比例してランダムに選ぶ
+   7. 求人数が満たされるまでランダムで応募してきた人を雇う
+   8. 前期就業していた人に賃金を支払い。賃金の支払いは前期就業していた企業 $o'$ から行われる。金額は、その企業の前期の労働稼働率 $v^{o'}_{-1}$ と家計の要求賃金率 $w^j_{-1}$ の積
+      1. $W^{j,o'}=v^{o'}_{-1}w^j_{-1}$
+   9. 従業員がいなくなった企業を倒産させる
+   10. 今期就業中の家計の要求賃金率 $w^j$ を前期の値 $w^j_{-1}$ より上げる。 $w^j=w^j_{-1}(1+\zeta_2 \times| randn() |)$
+   11. 今期失業中の家計の要求賃金率 $w^j$ を前期の値 $w^j_{-1}$ より下げる $w^j=w^j_{-1}(1-\zeta_3 \times | randn() |)$
+4.  $T_i^j=\tau_1 \sum_j (W_{-1}^{j,o}+IT^j_{h-1}+P_{h-1}^{j,o}+S_{-1}^{j,n})$
+5.  $T_a^j=\tau_2(\sum_o E_{h-1}^{o,j}+\sum_n F^{n,j}+\sum_n M_{h-1}^{n,j}-\sum_n L_{h-1}^{j,n})$
+6. $T_v^o=\tau_3(\sum_j C_{-1}^{o,j}+I_{-1}^o+G_{-1}^o)$
+7. $T_c^o=\max(0, \tau_4 P^o_{-1})$
+8. 名目政府支出の需要のアルゴリズム
+   1. $G_{sum}=G_0(1+\beta_1)^{(t-1)}$
+   2. $x^o=\max[1, x_{-1}^o \{1-\beta_2+\beta_3 randn\}]$
+   3. $z^o=\max(0, x^o-\beta_4) (k^o_{t-1})^{\beta_5}$
+   4. $G^{o,D}=\frac{z^o G_{sum}}{\sum z^o}$
+   5. 下限付きべき分布みたいなものを作って(xがこれにあたる)、一定の値を差し引いて保有する実質資本の$\beta_5$乗した(zがこれに当たる)後に、政府支出総額に合わせて全体的に値を大きくする。
+9.  $g^{o,D}=\frac{G^{o,D}}{p^o}$
+10. 家計の消費需要
+    1.  $Cs=\max\{\alpha_4\frac{\sum_j\sum_o C^{o,j}_{-1}}{J}, \alpha_1(\sum_o W_{-1}^{o,j}-T_a^j-T_i^j-r_L \sum_n L_{h-1}^{j,n}+IT^j_{h-1}+\sum_o P_{h-1}^{o,j}+\sum_n S_{-1}^{n,j}) + \alpha_2(\sum_o E_{h-1}^{o,j}+\sum_n M_{h-1}^{n,j}-\sum_n L_{h-1}^{n,j})\}$
+11. 消費財の購入先選択アルゴリズム
+    1.  前回消費財を買った企業$o$から別の企業に乗り換える確率は $rand() < \alpha_3 \frac{p^{o}-\overline{p}}{\overline{p}}$ とする。 $\overline{p}$ は平均価格で、前期の家計の消費と政府支出の名目値の合計を、前期の家計の消費と政府支出の実質値で割った値。消費の乗り換え先は「前期の実質生産量($\sum_j c_{-1}^{o,j}+g_{-1}^o$)」に比例する確率でランダムに決める
+    2.  今期の消費財購入先の企業を$o'$と書くことにすると、今期の消費需要は、 $c^{o',j,D}=\frac{Cs}{p^{o'}}$ で決める。 $o'$ 以外のすべての企業の商品は消費しない( $c^{o,j}=0 \ \ \ \{ o \mid o \neq o'\}$ )
+12. $i^{o,D}=\max[0, \min \{ \delta k_{-1}^o + (u^o-u^T)\gamma_1 k_{-1}^o, \gamma_2\frac{\sum_n M_{f-1}^{n,o}-\sum_n L_{f-1}^{o,n}}{p^o}\}]$
+13. $u^{o,D} = \frac{\sum_j c^{o,j,D}+i^{o,D}+g^{o,D}}{\gamma_1 k_{-1}^o}$
+14. 資本稼働率 $u^o$ が１以下になるように、需要が多すぎるときは供給量を減らす。
+    1.  $u^o = \frac{u^{o,D}}{\min(1, u^{o,D})}$
+    2.  $G^o = \frac{G^{o,D}}{\min(1, G^{o,D})}$
+    3.  $g^o = \frac{g^{o,D}}{\min(1, g^{o,D})}$
+    4.  $c^{o,j} = \frac{c^{o,j,D}}{\min(1, c^{o,j,D})}$
+    5.  $i^o = \frac{i^{o,D}}{\min(1, i^{o,D})}$
+15. $C^{o,j}=p^o c^{o,j}$
+16. $I^o=p^o i^o$
+17. $A^o=A_{-1}^o(1 + \mu_1 + \mu_2 \frac{i_{-1}^o}{k_{-1}^o})$
+    1.  技術水準上昇率が投資の一次関数として決まる。技術水準は、労働者一人時間あたりが扱う資本の量で表される。技術水準が上がるほど資本の量が増えるのでは？という発想。「情報と秩序」というタイトルの本からインスピレーションを受けている
+18. $k^o=(1-\delta)k_{-1}^o+i^o$
+19. $K^o=p^o k^o$
+20. 政府から家計への所得移転
+    1.  失業しているとき $IT^j_h=(1+\chi_1+\chi_2) \frac{\sum_j\sum_o C^{o,j}_{-1}}{J}$
+    2.  就業しているとき $IT^j_h=(1+\chi_1) \frac{\sum_j\sum_o C^{o,j}_{-1}}{J}$
+21. $P^o=\sum_j C^{o,j}+G^o+I^o-\sum_j W^{j,o}-T_c^o-T_v^o-r_L \sum_n L_{f-1}^{o,n}$
+22. $P_h^{j,o}=\max\{0, \theta_1(P^o-I^o)+\theta_2(\sum_n M_{f-1}^{o,n}-\sum_n L_{f-1}^{o,n})\}\frac{e_{h-1}^{o,j}}{e_{-1}^o}$
+23. $P_b^{n,o}=\max\{0, \theta_1(P^o-I^o)+\theta_2(\sum_n M_{f-1}^{o,n}-\sum_n L_{f-1}^{o,n})\}\frac{e_{b-1}^{o,n}}{e_{-1}^o}$
+24. $P_f^o=P^o-\sum_j P_h^{j,o}-\sum_n P_b^{n,o}$
+25. $S^{j,n}=\max[\{\theta_1(r_L L_{-1}^n+\sum_o P_b^{n,o})+\theta_2 \sum_o E_{b-1}^{o,n}\}\frac{f_{h-1}^{j,n}}{f_{-1}^n}]$
 - 
 - ここから説明更新
 - 
-- 就業・失業判定、賃金率と賃金の決定のアルゴリズム
-  - $EMP^j$ は失業時に0，就業時にoを値に持つ
-  - if $\sum_o EMP_{-1}^{j}>0$
-    - if $rand() < \zeta_1$
-      - $EMP^{j}=0$
-      - $w^j=w_{-1}^j[1 - \zeta_3 abs\{randn()\}]$
-      - $W^{j,o} = v_{-1}^o w_{-1}^j$
-    - else
-      - $EMP^{j}=o=EMP_{-1}^{j}$
-      - $w^j=w_{-1}^j[1 + \zeta_2 abs\{randn()\}]$
-      - $W^{j,o} = v_{-1}^o w_{-1}^j$
-  - else
-    - 企業が Int64($\max[0, \frac{1}{A^o}\{u_{-1}^o k_{-1}^o-A_{-1}^o \sum_j (W_{-1}^{j,o}>0)\}]$) 人の求人を出す
-    - 求人数に比例する確率で失業者は応募する。応募の中から定員までランダムに雇用する
-    - $o'$で雇用が決まった場合
-      - $w^j=w_{-1}^j[1 + \zeta_2 abs\{randn()\}]$
-      - $EMP^{j}=o'$
-    - 失業が続く場合
-      - $w^j=w_{-1}^j[1 - \zeta_3 abs\{randn()\}]$
-- $T_i^j=\tau_1 \sum_j (W_{-1}^{j,o}+P_{h-1}^{j,o}+S_{-1}^{j,n})$
-- $T_a^j=\tau_2(\sum_o E_{h-1}^{o,j}+\sum_n M_{h-1}^{n,j}-\sum_n L_{h-1}^{j,n})$
-- $T_v^o=\tau_3(\sum_j C_{-1}^{o,j}+I_{-1}^o+G_{-1}^o)$
-- $T_c^o=\tau_4(\sum_j C_{-1}^{o,j}+G_{-1}^o+I_{-1}^o-\sum_j W_{-1}^{j,o}-T_v^o)$
-- 政府支出のアルゴリズム
-  - $G_{sum}=\sum G^o=G_0(1+\beta_1)^{(t-1)}$
-  - $x^o=\max[1, x_{-1}^o \{1-\beta_2+\beta_3 randn\}]$
-  - $z^o=\max(0, x^o-\beta_4)$
-  - $G^o=\frac{z^o G_{sum}}{\sum z^o}$
-  - 下限付きべき分布みたいなものを作って(xがこれにあたる)、一定の値を差し引いた後(zがこれに当たる)に、政府支出総額に合わせて大きくする。
-- $g^o=\frac{G^o}{p^o}$
-- $\sum_o C^{o,j}=\alpha_1(\sum_o W_{-1}^{o,j}-T_a^j-T_i^j-r_L \sum_n L_{h-1}^{j,n}+\sum_o P_{h-1}^{o,j}+\sum_n S_{-1}^{n,j}) + \alpha_2(\sum_o E_{h-1}^{o,j}+\sum_n M_{h-1}^{n,j}-\sum_n L_{h-1}^{n,j})$
-- 消費財の購入先のアルゴリズム
-  - 前回消費財を買った企業$o$から別の企業に乗り換える確率は
-    - $rand() < \alpha_3 \frac{p^{o}-\overline{p}}{\overline{p}}$
-    - とする。乗り換え先は「前期の消費財生産量($\sum_j c_{-1}^{o,j}$)＋前期の総消費量の一定割合($\alpha_4 \frac{\sum_o \sum_j c_{-1}^{o,j}+\sum_o g_{-1}^o}{J}$)」に比例する確率でランダムに決める
-  - 今期の消費財購入先の企業を$o'$と書くことにすると、今期の消費水準は、
-    - $c^{o'j}=\frac{\sum_o C^{o,j}}{p^{o'}}$
-    - で決める。
-    - $o'$以外のすべての企業の商品は消費しない($c^{o,j}=0 \ \ \ \{ o \mid o \neq o'\}$)
-- $C^{o,j}=p^o c^{o,j}$
-- $A^o=A_{-1}^o(1 + \mu_1 + \mu_2 \frac{i_{-1}^o}{k_{-1}^o})$
-  - 技術水準上昇率が投資の一次関数として決まる。
-- $u^o = \frac{\sum_j c^{o,j}+i^o+g^o}{\gamma_1 k_{-1}^o}$
-- $i^o=\max\{0, \delta k_{-1}^o + (u^o-u^T)\gamma_1 k_{-1}^o + \gamma_2\frac{\sum_n M_{f-1}^{n,o}-\sum_n L_{f-1}^{o,n}}{p^o}\}$
-- $I^o=p^o i^o$
-- $k^o=(1-\delta)k_{-1}^o+i^o$
-- $K^o=p^o k^o$
-- $P^o=\sum_j C^{o,j}+G^o+I^o-\sum_j W^{j,o}-T_c^o-T_v^o-r_L \sum_n L_{f-1}^{o,n}$
-- $P_h^{j,o}=\max\{0, \theta_1(P^o-I^o)+\theta_2(\sum_n M_{f-1}^{o,n}-\sum_n L_{f-1}^{o,n})\}\frac{e_{h-1}^{o,j}}{e_{-1}^o}$
-- $P_b^{n,o}=\max\{0, \theta_1(P^o-I^o)+\theta_2(\sum_n M_{f-1}^{o,n}-\sum_n L_{f-1}^{o,n})\}\frac{e_{b-1}^{o,n}}{e_{-1}^o}$
-- $P_f^o=P^o-\sum_j P_h^{j,o}-\sum_n P_b^{n,o}$
-- $S^{j,n}=\{\theta_1(r_L L_{-1}^n+\sum_o P_b^{n,o})+\theta_2 \sum_o E_{b-1}^{o,n}\}\frac{f_{h-1}^{j,n}}{f_{-1}^n}$
 - $NL_h^j=-\sum_o C^{o,j}+\sum_o W^{j,o}-T_i^j-T_a^j-r_L \sum_n L_{h-1}^{j,n}+\sum_o P_h^{j,o}+\sum_n S^{j,n}$
 - $NL_f^o=-I^o+P_f^o$
 - $NL_b^n=r_L L_{-1}^n+\sum_o P_b^{o,n}-\sum_j S^{j,n}$
