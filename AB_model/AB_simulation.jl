@@ -2,7 +2,7 @@ using StatsPlots
 using StatsBase
 using Random
 
-J, O, N, TIME,  = 1000, 10, 3, 200
+J, O, N, TIME,  = 1000, 10, 3, 150
 Oin = 1
 OBuffer = O + TIME*Oin
 
@@ -46,10 +46,10 @@ c_base = 0.1
 ν1, ν2, ν3 = 0.35, 0.5, 1.0
 θ1, θ2 = 0.2, 0.02
 ϕ1, ϕ2 = 0.8, 1.0   # ϕ1<1-θ2
-ψ2, ψ3, ψ4 = 0.01, 1.0, 5.0
+ψ2, ψ3, ψ4, ψ5 = 0.05, 1.0, 0.001, 0.1
 ζ1, ζ2, ζ3, ζ4 = 0.05, 0.03, 0.05, 0.6 # ζ2*(1-ζ1)-ζ3*ζ1 > β1
 ξ1, ξ2 = 0.05, 0.05
-χ1, χ2 = 0.5, 0.7
+χ1, χ2 = 0.4, 0.7
 
 # 関数定義
 
@@ -151,14 +151,9 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
                 W[j,EMP[j,t-1],t] = v[EMP[j,t-1],t-1]*w[j,t-1]
             end
         elseif j in flotations_js # 起業メンバー
-            for (x,j1) in enumerate(flotations_js)
-                if j1==j
-                    EMP[j,t-1] = flotations_os[x]
-                    EMP[j,t] = EMP[j,t-1]
-                    w[j,t] = w[j,t-1]*(1+ζ2*abs(randn()))
-                    break
-                end
-            end
+            #EMP[j,t-1] = flotations_os[x]
+            EMP[j,t] = EMP[j,t-1]
+            w[j,t] = w[j,t-1]*(1+ζ2*abs(randn()))
         else # 前期失業していた人
             appli_j(j, prob, appli) # 応募先を割り振る
         end
@@ -174,13 +169,27 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
             end
         end
     end
+
+    for o in os
+        if sum(EMP[:,t].==o)==0
+            println("0, o=$o")
+        end
+    end
+
     # 従業員が0になった企業を倒産させる
     s = Set(EMP[:,t])
-    for (q,o) in enumerate(os)
+    for (q,o) in enumerate(deepcopy(os))
         if !(o in s)
             bankruptcy(t-1,o,q)
         end
     end
+
+    for o in os
+        if sum(EMP[:,t].==o)==0
+            println("1, o=$o")
+        end
+    end
+
     # 失業者の要求賃金率を下げる
     for j=1:J
         if EMP[j,t]==0
@@ -283,14 +292,14 @@ function Eb_func(t)
     global Eb
     # ポートフォリオ配分先の確率の重みの共通部分を計算
     index = ψ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)) 
-            +ψ3*(P[os,t]-Pf[os,t])#./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2)) 
-    #index = exp.(O*index./(sum(Eh[os,:,t-1])+sum(Eb[os,:,t-1])))
-    index = exp.(index).^ψ4
+            +ψ3*(P[os,t]-Pf[os,t])
+    index = max.(0.0, index)
+    index .+= ψ4*mean(index)
     index /= sum(index)
     # 銀行nのポートフォリオ計算
     for n=1:N
         # ポートフォリオ配分割合を決める
-        prob = index.*abs.(1.0.+0.1*randn(O)) + Eb[os,n,t-1]/(sum(Eb[os,n,t-1]))
+        prob = index.*abs.(1.0.+ψ5*randn(O)) + Eb[os,n,t-1]/(sum(Eb[os,n,t-1]))
         prob /= sum(prob)
         # 収益率から、保有する株式の総額目標を決定
         EF_volume = (sum(Eb[os,n,t-1])+NLb[n,t])*(1.0-rL.+λ6*(sum(Pb[n,os,t])/sum(Eb[os,n,t-1]).-rL))
@@ -441,7 +450,7 @@ function flotation(t) # 起業
     global ΔMh, ΔMf
     global Δe, Δeh
     global k, pe, p, A
-    floations_info, o_j_value_n_info, os_adds = [], [], []
+    flotation_info, o_j_value_n_info, os_adds = [], [], []
     next_o = 1
     for q=1:size(k)[1]
         if sum(k[q,:]) == 0.0
@@ -458,8 +467,11 @@ function flotation(t) # 起業
         work_j = workers_js[x]
         cap_j = capitalists_js[x]
 
+        # 従業員情報更新
+        EMP[work_j,t] = o
+
         # 企業情報リストに追加
-        push!(floations_info, [cap_j, work_j, o])
+        push!(flotation_info, [cap_j, work_j, o])
         
         # 必要なストックの初期状態の定義
         cap_Mf = 0.0
@@ -495,7 +507,7 @@ function flotation(t) # 起業
     append!(G_calc_item, [1.0 for _=1:floation_count])
     append!(G_potential, [0.0 for _=1:floation_count])
 
-    return floations_info, o_j_value_n_info, os_adds
+    return flotation_info, o_j_value_n_info, os_adds
 end
 
 function one_season(TIMERANGE)
@@ -522,6 +534,11 @@ function one_season(TIMERANGE)
         #p[os,t] = ν2*(1.0+ν1).*(dropdims(sum(W[:,os,t-1], dims=1);dims=1)+Tv[os,t-1]+Tc[os,t-1]+rL*dropdims(sum(Lf[os,:,t-1],dims=2);dims=2)+δ*k[os,t-1])./(uT*γ1*k[os,t-1]).+(1-ν2)*p_mean
         p[os,t] = ν2*(1.0+ν1.+ν3.*(i[os,t-1]./(uT*γ1*k[os,t-1]))).*(dropdims(sum(W[:,os,t-1], dims=1);dims=1)+Tv[os,t-1]+Tc[os,t-1]+rL*dropdims(sum(Lf[os,:,t-1],dims=2);dims=2)+δ*k[os,t-1])./(uT*γ1*k[os,t-1]).+(1-ν2)*p_mean
         w_and_W_func(t, flotation_info)
+        for o in os
+            if sum(EMP[:,t].==o)==0
+                println("2, o=$o")
+            end
+        end
         Ti[:,t] = τ1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)+ITh[:,t-1]+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2))
         Ta[:,t] = τ2*(dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)+dropdims(sum(Fh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
         Tv[os,t] = τ3*(dropdims(sum(C[os,:,t-1], dims=2);dims=2)+I[os,t-1]+G[os,t-1])
@@ -598,8 +615,11 @@ function one_season(TIMERANGE)
         
         for o in os
             v[o,t] = (u[o,t]*k[o,t])./(A[o,t]*sum(EMP[:,t].==o))
+            if v[o,t] == Inf
+                println("v[$o,$t]=$(v[o,t]), sum(EMP[:,$t].==$o)=$(sum(EMP[:,t].==o)), A[$o,$t]=$(A[o,t]), u[$o,$t]*k[$o,$t]=$(u[o,t]*k[o,t])")
+            end
         end
-        
+
         println("transaction consistency : ",sum(NLh[:,t])+sum(NLf[:,t])+sum(NLb[:,t])+sum(NLg[t]))
         println("h flow consistency : ",sum(NLh[:,t])-sum([sum(pe[:,t-1].*Δeh[:,j,t]) for j=1:J])-sum([sum(pf[:,t-1].*Δfh[:,j,t]) for j=1:J])+sum(ΔLh[:,:,t])-sum(ΔMh[:,:,t])-sum(ΔZh[:,t]))
         println("f flow consistency : ",sum(NLf[:,t])+sum(pe[:,t-1].*Δe[:,t])+sum(ΔLf[:,:,t])-sum(ΔMf[:,:,t])-sum(ΔZf[:,t]))
