@@ -2,7 +2,7 @@ using StatsPlots
 using StatsBase
 using Random
 
-J, O, N, TIME,  = 1000, 10, 3, 150
+J, O, N, TIME,  = 1000, 10, 3, 250
 Oin = 1
 OBuffer = O + TIME*Oin
 
@@ -46,7 +46,7 @@ c_base = 0.1
 ν1, ν2, ν3 = 0.35, 0.5, 1.0
 θ1, θ2 = 0.2, 0.02
 ϕ1, ϕ2 = 0.8, 1.0   # ϕ1<1-θ2
-ψ2, ψ3, ψ4, ψ5 = 0.05, 1.0, 0.001, 0.1
+ψ1, ψ2, ψ3, ψ4 = 0.05, 1.0, 0.001, 0.1
 ζ1, ζ2, ζ3, ζ4 = 0.05, 0.03, 0.05, 0.6 # ζ2*(1-ζ1)-ζ3*ζ1 > β1
 ξ1, ξ2 = 0.05, 0.05
 χ1, χ2 = 0.4, 0.7
@@ -170,23 +170,15 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
         end
     end
 
-    for o in os
-        if sum(EMP[:,t].==o)==0
-            println("0, o=$o")
-        end
-    end
-
     # 従業員が0になった企業を倒産させる
     s = Set(EMP[:,t])
-    for (q,o) in enumerate(deepcopy(os))
+    q = 1
+    while q <= length(os)
+        o = os[q]
         if !(o in s)
             bankruptcy(t-1,o,q)
-        end
-    end
-
-    for o in os
-        if sum(EMP[:,t].==o)==0
-            println("1, o=$o")
+        else
+            q += 1
         end
     end
 
@@ -244,10 +236,10 @@ function household_portfolio_func(t, o_j_value_n_info)
         Vs[j] -= value
     end
     # ポートフォリオ配分先の確率の重みの共通部分を計算
-    index = ψ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))
-            +ψ3*(P[os,t]-Pf[os,t])#./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2))
+    index = ψ1*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))
+            +ψ2*(P[os,t]-Pf[os,t])#./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2))
     append!(index, 
-            +ψ3*dropdims(sum(S[:,:,t], dims=1);dims=1))#./dropdims(sum(Fh[:,:,t-1], dims=2);dims=2))
+            +ψ2*dropdims(sum(S[:,:,t], dims=1);dims=1))#./dropdims(sum(Fh[:,:,t-1], dims=2);dims=2))
     index = max.(zeros(O+N), index)
     index /= sum(index)
     # ポートフォリオ配分先の数Int64(x[j])を決めるための準備。
@@ -291,15 +283,15 @@ end
 function Eb_func(t)
     global Eb
     # ポートフォリオ配分先の確率の重みの共通部分を計算
-    index = ψ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)) 
-            +ψ3*(P[os,t]-Pf[os,t])
+    index = ψ1*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)) 
+            +ψ2*(P[os,t]-Pf[os,t])
     index = max.(0.0, index)
-    index .+= ψ4*mean(index)
+    index .+= ψ3*mean(index)
     index /= sum(index)
     # 銀行nのポートフォリオ計算
     for n=1:N
         # ポートフォリオ配分割合を決める
-        prob = index.*abs.(1.0.+ψ5*randn(O)) + Eb[os,n,t-1]/(sum(Eb[os,n,t-1]))
+        prob = index.*abs.(1.0.+ψ4*randn(O)) + Eb[os,n,t-1]/(sum(Eb[os,n,t-1]))
         prob /= sum(prob)
         # 収益率から、保有する株式の総額目標を決定
         EF_volume = (sum(Eb[os,n,t-1])+NLb[n,t])*(1.0-rL.+λ6*(sum(Pb[n,os,t])/sum(Eb[os,n,t-1]).-rL))
@@ -615,9 +607,6 @@ function one_season(TIMERANGE)
         
         for o in os
             v[o,t] = (u[o,t]*k[o,t])./(A[o,t]*sum(EMP[:,t].==o))
-            if v[o,t] == Inf
-                println("v[$o,$t]=$(v[o,t]), sum(EMP[:,$t].==$o)=$(sum(EMP[:,t].==o)), A[$o,$t]=$(A[o,t]), u[$o,$t]*k[$o,$t]=$(u[o,t]*k[o,t])")
-            end
         end
 
         println("transaction consistency : ",sum(NLh[:,t])+sum(NLf[:,t])+sum(NLb[:,t])+sum(NLg[t]))
@@ -927,13 +916,6 @@ function all_plot(time)
     plot!(2:time, [sum(S[:,:,t]) for t=2:time],label="S")
     savefig("AB_model/figs/household_transaction.png")
 
-    plot(2:time, [sum(W[:,:,t])-sum(Ti[:,t])-sum(Ta[:,t])-rL*sum(Lh[:,:,t-1])+sum(ITh[:,t])+sum(Ph[:,:,t])+sum(S[:,:,t]) for t=2:time],label="W-Ti-Ta-rL*Lh+ITh+Ph+S")
-    plot!(2:time, [sum(G[:,t]) for t=2:time],label="G")
-    plot!(2:time, [sum(C[:,:,t])+sum(G[:,t]) for t=2:time],label="C+G")
-    plot!(2:time, [sum(W[:,:,t]) for t=2:time],label="W")
-    plot!(2:time, [sum(C[:,:,t]) for t=2:time],label="C")
-    plot!(2:time, [sum(ITh[:,t]) for t=2:time],label="ITh")
-    savefig("AB_model/figs/TMP.png")
 end 
 
 
