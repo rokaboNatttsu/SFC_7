@@ -21,7 +21,7 @@ H, ΔH = zeros(N, TIME), zeros(N, TIME)
 K, k = zeros(OBuffer, TIME), zeros(OBuffer, TIME)
 DE, DF = zeros(TIME), zeros(TIME)
 NWh, NWf, NWb, NWg, NWg, NW = zeros(J, TIME), zeros(OBuffer, TIME), zeros(N, TIME), zeros(TIME), zeros(TIME), zeros(TIME)
-u, v, A = zeros(OBuffer, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME)
+u, v, A, uw = zeros(OBuffer, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME), zeros(OBuffer, TIME)
 ΔZb, ΔZh, ΔZf = zeros(N, TIME), zeros(J, TIME), zeros(OBuffer, TIME)
 
 EMP = zeros(Int64, J,TIME)
@@ -120,7 +120,7 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
     global w, W, EMP, v
     flotations_js = [info[2] for info in flotation_info]
     # 求人数を作る
-    offers = [Int64(round(max(0, (u[o,t-1]*k[o,t-1]-A[o,t-1]*sum(EMP[:,t-1].==o))/A[o,t-1]))) for o in os]
+    offers = [Int64(round(max(0, (uw[o,t-1]*k[o,t-1]-A[o,t-1]*sum(EMP[:,t-1].==o))/A[o,t-1]))) for o in os]
     # 応募確率を作る
     prob = zeros(O)
     for q in 1:O
@@ -369,14 +369,24 @@ function ΔMf_and_Mf_func(t, o_j_value_n_info, os_adds)
 end
 
 function suply_line(t)
-    global g, c, i, G
+    global g, c, i, G, v, u, uw
     for o in os
         if u[o,t]>1.0
             G[o,t] /= u[o,t]
             g[o,t] /= u[o,t]
             c[o,:,t] ./= u[o,t]
             i[o,t] /= u[o,t]
+            v[o,t] /= u[o,t]
             u[o,t] = 1.0
+        end
+        uw[o,t] = u[o,t]
+        if v[o,t] > 1.5
+            G[o,t] *= 1.5/v[o,t]
+            g[o,t] *= 1.5/v[o,t]
+            c[o,:,t] .*= 1.5/v[o,t]
+            i[o,t] *= 1.5/v[o,t]
+            u[o,t] *= 1.5/v[o,t]
+            v[o,t] = 1.5
         end
     end
 end
@@ -516,12 +526,15 @@ function one_season(TIMERANGE)
         c_func(t)
         i[os,t] = max.(0.0, min.(δ*k[os,t-1]+(u[os,t-1].-uT).*γ1.*k[os,t-1], γ2*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))./p[os,t]))
         u[os,t] = (dropdims(sum(c[os,:,t], dims=2);dims=2)+i[os,t]+g[os,t])./(γ1*k[os,t-1])
+        A[os,t] = A[os,t-1].*(1+μ1.+μ2*i[os,t-1]./k[os,t-1])
+        for o in os
+            v[o,t] = (u[o,t]*k[o,t-1])./(A[o,t]*sum(EMP[:,t].==o))
+        end
         suply_line(t)
         for o in os
             C[o,:,t] = p[o,t]*c[o,:,t]
         end
         I[os,t] = p[os,t].*i[os,t]
-        A[os,t] = A[os,t-1].*(1+μ1.+μ2*i[os,t-1]./k[os,t-1])
         k[os,t] = (1-δ).*k[os,t-1]+i[os,t]
         K[os,t] = p[os,t].*k[os,t]
         ITh[:,t] = χ1*(sum(C[:,:,t-1])+sum(G[:,t-1]))/J .+ χ2*(EMP[:,t-1].==0)*sum(C[:,:,t-1])/J
@@ -581,10 +594,6 @@ function one_season(TIMERANGE)
         DE[t] = -sum(E[:,t])+sum(Eh[:,:,t])+sum(Eb[os,:,t])
         DF[t] = sum(Fh[:,:,t])-sum(F[:,t])
         
-        for o in os
-            v[o,t] = (u[o,t]*k[o,t-1])./(A[o,t]*sum(EMP[:,t].==o))
-        end
-
         println("transaction consistency : ",sum(NLh[:,t])+sum(NLf[:,t])+sum(NLb[:,t])+sum(NLg[t]))
         println("h flow consistency : ",sum(NLh[:,t])-sum([sum(pe[:,t-1].*Δeh[:,j,t]) for j=1:J])-sum([sum(pf[:,t-1].*Δfh[:,j,t]) for j=1:J])+sum(ΔLh[:,:,t])-sum(ΔMh[:,:,t])-sum(ΔZh[:,t]))
         println("f flow consistency : ",sum(NLf[:,t])+sum(pe[:,t-1].*Δe[:,t])+sum(ΔLf[:,:,t])-sum(ΔMf[:,:,t])-sum(ΔZf[:,t]))
