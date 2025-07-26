@@ -2,7 +2,7 @@ using StatsPlots
 using StatsBase
 using Random
 
-J, O, N, TIME,  = 1000, 10, 3, 200
+J, O, N, TIME,  = 400, 10, 3, 300
 Oin = 1
 OBuffer = O + TIME*Oin
 
@@ -34,21 +34,21 @@ rL = 0.03
 G0 = 1.0*J
 uT = 0.8
 
-α1, α2, α3, α4 = 0.9, 0.02, 0.5, 0.01
+α1, α2, α3, α4 = 0.95, 0.02, 0.5, 0.01
 β1, β2, β3, β4, β5 = 0.02, 0.001, 0.02, 1.0, 0.7
 γ1, γ2 = 1.0, 0.3
 δ = 0.05
 ϵ1, ϵ2, ϵ3 = 1.0, 1.0, 0.1
 λ1, λ2, λ3, λ4, λ5, λ6, λ7, λ8, λ9, λ10 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3, 0.8, 0.5
-τ1, τ2, τ3, τ4 = 0.25, 0.01, 0.1, 0.2
+τ1, τ2, τ3, τ4 = 0.2, 0.01, 0.1, 0.2
 μ1, μ2 = 0.0, 0.1
 ν1, ν2, ν3 = 0.35, 0.5, 1.0
 θ1, θ2 = 0.2, 0.02
 ϕ1, ϕ2 = 0.8, 1.0   # ϕ1<1-θ2
 ψ1, ψ2, ψ3, ψ4 = 0.05, 1.0, 0.001, 0.1
-ζ1, ζ2, ζ3, ζ4 = 0.05, 0.03, 0.05, 0.6 # ζ2*(1-ζ1)-ζ3*ζ1 > β1
+ζ1, ζ2, ζ3, ζ4 = 0.05, β1+0.02, β1+0.20, 0.7
 ξ1, ξ2 = 0.05, 0.05
-χ1, χ2 = 0.4, 0.7
+χ1, χ2 = 0.2, 0.7
 
 # 関数定義
 
@@ -81,10 +81,9 @@ function c_func(t)
     end
     r /= r[end]
     # 消費額を計算
-    Cs = α1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)-Ta[:,t]-Ti[:,t]-rL*dropdims(sum(Lh[:,:,t-1], dims=2);dims=2)+ITh[:,t-1]+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2))
-        +α2*(dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
+    Cs = (α1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)-Ta[:,t]-Ti[:,t]-rL*dropdims(sum(Lh[:,:,t-1], dims=2);dims=2)+ITh[:,t-1]+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2)) 
+        + α2*(dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2)))
     Cs = max.(Cs, α4*sum(C[:,:,t-1])/J)
-    #Cs = max.(Cs, α4*mean(p[os,t]))
     if t==2
         Cs = max.(Cs, α4)
     end
@@ -121,7 +120,7 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
     global w, W, EMP, v
     flotations_js = [info[2] for info in flotation_info]
     # 求人数を作る
-    offers = [Int64(round(max(0, (u[o,t-1]*k[o,t-1]-A[o,t-1]*sum(w[:,t-1].==o))/A[o,t-1]))) for o in os]
+    offers = [Int64(round(max(0, (u[o,t-1]*k[o,t-1]-A[o,t-1]*sum(EMP[:,t-1].==o))/A[o,t-1]))) for o in os]
     # 応募確率を作る
     prob = zeros(O)
     for q in 1:O
@@ -163,8 +162,7 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
     for q=1:O
         if (offers[q] > 0) & (length(appli[q]) > 0)
             much = collect(Set(sample(appli[q], offers[q])))
-            for x=1:length(much)
-                j = much[x]
+            for j in much
                 EMP[j,t] = os[q]
                 w[j,t] = w[j,t-1]*(1+ζ2*abs(randn()))
             end
@@ -186,7 +184,7 @@ function w_and_W_func(t, flotation_info)    # wとWの関数の分離を検討
     # 失業者の要求賃金率を下げる
     for j=1:J
         if EMP[j,t]==0
-            w[j,t] = w[j,t-1]*(1-ζ3*abs(randn()))
+            w[j,t] = w[j,t-1]*abs(1-ζ3*abs(randn()))
         end
     end
 end
@@ -237,10 +235,8 @@ function household_portfolio_func(t, o_j_value_n_info)
         Vs[j] -= value
     end
     # ポートフォリオ配分先の確率の重みの共通部分を計算
-    index = ψ1*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))
-            +ψ2*(P[os,t]-Pf[os,t])#./(dropdims(sum(Eh[os,:,t-1], dims=2);dims=2)+dropdims(sum(Eb[os,:,t-1], dims=2);dims=2))
-    append!(index, 
-            +ψ2*dropdims(sum(S[:,:,t], dims=1);dims=1))#./dropdims(sum(Fh[:,:,t-1], dims=2);dims=2))
+    index = ψ1*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2))+ψ2*(P[os,t]-Pf[os,t])
+    append!(index, +ψ2*dropdims(sum(S[:,:,t], dims=1);dims=1))
     index = max.(zeros(O+N), index)
     index /= sum(index)
     # ポートフォリオ配分先の数Int64(x[j])を決めるための準備。
@@ -284,8 +280,7 @@ end
 function Eb_func(t)
     global Eb
     # ポートフォリオ配分先の確率の重みの共通部分を計算
-    index = ψ1*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)) 
-            +ψ2*(P[os,t]-Pf[os,t])
+    index = ψ1*(dropdims(sum(Mf[:,os,t-1], dims=1);dims=1)-dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)) + ψ2*(P[os,t]-Pf[os,t])
     index = max.(0.0, index)
     index .+= ψ3*mean(index)
     index /= sum(index)
@@ -512,7 +507,7 @@ function one_season(TIMERANGE)
         p_mean = sum(p[os,t-1].*(dropdims(sum(c[os,:,t-1],dims=2);dims=2) + g[os,t-1]))./(sum(c[os,:,t-1]) + sum(g[os,t-1]))
         p[os,t] = ν2*(1.0+ν1.+ν3.*(i[os,t-1]./(uT*γ1*k[os,t-1]))).*(dropdims(sum(W[:,os,t-1], dims=1);dims=1)+Tv[os,t-1]+Tc[os,t-1]+rL*dropdims(sum(Lf[os,:,t-1],dims=2);dims=2)+δ*k[os,t-1])./(uT*γ1*k[os,t-1]).+(1-ν2)*p_mean
         w_and_W_func(t, flotation_info)
-        Ti[:,t] = τ1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)+ITh[:,t-1]+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2))
+        Ti[:,t] = τ1*(dropdims(sum(W[:,os,t-1], dims=2);dims=2)+dropdims(sum(Ph[:,os,t-1], dims=2);dims=2)+dropdims(sum(S[:,:,t-1], dims=2);dims=2))
         Ta[:,t] = τ2*(dropdims(sum(Eh[os,:,t-1], dims=1);dims=1)+dropdims(sum(Fh[:,:,t-1], dims=1);dims=1)+dropdims(sum(Mh[:,:,t-1], dims=1);dims=1)-dropdims(sum(Lh[:,:,t-1], dims=2);dims=2))
         Tv[os,t] = τ3*(dropdims(sum(C[os,:,t-1], dims=2);dims=2)+I[os,t-1]+G[os,t-1])
         Tc[os,t] = max.(0.0, τ4*P[os,t-1])
@@ -529,7 +524,7 @@ function one_season(TIMERANGE)
         A[os,t] = A[os,t-1].*(1+μ1.+μ2*i[os,t-1]./k[os,t-1])
         k[os,t] = (1-δ).*k[os,t-1]+i[os,t]
         K[os,t] = p[os,t].*k[os,t]
-        ITh[:,t] = (χ1 .+ χ2*(EMP[:,t-1].==0))*sum(C[:,:,t-1])/J
+        ITh[:,t] = χ1*(sum(C[:,:,t-1])+sum(G[:,t-1]))/J .+ χ2*(EMP[:,t-1].==0)*sum(C[:,:,t-1])/J
         P[os,t] = dropdims(sum(C[os,:,t], dims=2);dims=2)+G[os,t]+I[os,t]-dropdims(sum(W[:,os,t], dims=1);dims=1)-Tv[os,t]-Tc[os,t]-rL*dropdims(sum(Lf[os,:,t-1], dims=2);dims=2)
         for o in os
             Ph[:,o,t] = max(0.0, θ1*(P[o,t]-I[o,t])+θ2*(sum(Mf[:,o,t-1])-sum(Lf[o,:,t-1]))).*eh[o,:,t-1]./e[o,t-1]
@@ -587,7 +582,7 @@ function one_season(TIMERANGE)
         DF[t] = sum(Fh[:,:,t])-sum(F[:,t])
         
         for o in os
-            v[o,t] = (u[o,t]*k[o,t])./(A[o,t]*sum(EMP[:,t].==o))
+            v[o,t] = (u[o,t]*k[o,t-1])./(A[o,t]*sum(EMP[:,t].==o))
         end
 
         println("transaction consistency : ",sum(NLh[:,t])+sum(NLf[:,t])+sum(NLb[:,t])+sum(NLg[t]))
@@ -603,7 +598,7 @@ function one_season(TIMERANGE)
         fund_shortage_bankruptcy(t)   # 資金繰りが理由の倒産処理
 
         UER[t] = sum(EMP[:,t].==0)/J
-        if t%50==0
+        if t%TIME==0
             all_plot(t)
         end
     end
