@@ -2,7 +2,7 @@ using StatsPlots
 using StatsBase
 using Random
 
-J, O, N, Oin, STIME, SEASON = 600, 10, 3, 1, 60, 5
+J, O, N, Oin, STIME, SEASON = 500, 10, 3, 1, 100, 3
 MAXTIME = STIME*SEASON
 OBuffer = O + MAXTIME*Oin
 tm, tc, tp = STIME, 1, 2
@@ -35,14 +35,14 @@ rL = 0.03
 G0 = 1.0*J
 uT = 0.8
 
-α1, α2, α3, α4 = 0.95, 0.02, 0.5, 0.01
+α1, α2, α3, α4 = 0.9, 0.03, 0.5, 0.01
 β1, β2, β3, β4, β5 = 0.02, 0.001, 0.02, 1.0, 0.7
 γ1, γ2 = 1.0, 0.3
 δ = 0.05
 ϵ1, ϵ2, ϵ3 = 1.0, 1.0, 0.1
-λ1, λ2, λ3, λ4, λ5, λ6, λ7, λ8, λ9, λ10 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3, 0.8, 0.5
-τ1, τ2, τ3, τ4 = 0.2, 0.01, 0.1, 0.2
-μ1, μ2 = 0.0, 0.1
+λ1, λ2, λ3, λ4, λ5, λ6, λ7, λ8, λ9, λ10 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.02, 0.3, 0.8, 0.5 # 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3, 0.8, 0.5
+τ1, τ2, τ3, τ4 = 0.2, 0.02, 0.1, 0.2
+μ1, μ2 = 0.0, 0.05
 ν1, ν2, ν3 = 0.35, 0.5, 1.0
 θ1, θ2 = 0.2, 0.02
 ϕ1, ϕ2 = 0.8, 1.0   # ϕ1<1-θ2
@@ -53,12 +53,12 @@ uT = 0.8
 
 # 関数定義
 
-function G_func()
+function G_func(t)
     global G, G_calc_item, G_potential
-    Gsum = G0*(1+β1)^(tm)
+    Gsum = G0*(1+β1)^(t-1)
     G_calc_item .*= 1.0 .- β2 .+ β3*randn(O)
     G_calc_item = max.(1.0, G_calc_item)
-    if tc == 1
+    if t == 1
         G_potential = max.(0.0, G_calc_item .- β4)
     else
         G_potential = max.(0.0, G_calc_item .- β4) .* k[os,tm].^β5
@@ -453,9 +453,14 @@ function flotation() # 起業
     floation_count = min(Oin, sum(EMP[:,tc].==0.0))
     capitalists_js = sample(1:J, Weights(prob), floation_count, replace=false)
     workers_js = sample(findall(x -> x == 0, EMP[:,tc]), floation_count, replace=false)
+    p_mean = sum(p[os,tm].*(dropdims(sum(c[os,:,tm],dims=2);dims=2) + g[os,tm]))./(sum(c[os,:,tm]) + sum(g[os,tm]))
     for (x, o) in enumerate(next_o:next_o+floation_count-1)
         work_j = workers_js[x]
         cap_j = capitalists_js[x]
+
+        # 技術水準の選定
+        Awaight = dropdims(sum(c[os,:,tc],dims=2);dims=2).+g[os,tc]
+        A[o,tc] = sample(A[os,tm], Weights(Awaight))
 
         # 従業員情報更新
         EMP[work_j,tc] = o
@@ -468,7 +473,7 @@ function flotation() # 起業
         for n=1:N
             if Mh[n,cap_j,tm] > 0.0
                 # 企業の預金増加に伴う変化
-                cap_Mf = λ10*Mh[n,cap_j,tm]
+                cap_Mf = min(λ10*Mh[n,cap_j,tm], p_mean*2.0*A[o,tc])
                 ΔMf[n,o,tc] = cap_Mf   # 資本家と企業が同じ銀行に口座を持つこととする
 
                 # 投資した家計の情報を追加
@@ -481,10 +486,7 @@ function flotation() # 起業
         Δe[o,tc] = cap_Mf
         Δeh[o,cap_j,tc] = cap_Mf
         # 企業が価格のつかない資本を持つことに伴う変化
-        p_mean = sum(p[os,tm].*(dropdims(sum(c[os,:,tm],dims=2);dims=2) + g[os,tm]))./(sum(c[os,:,tm]) + sum(g[os,tm]))
         k[o,tc] = cap_Mf/p_mean
-        Awaight = dropdims(sum(c[os,:,tc],dims=2);dims=2).+g[os,tc]
-        A[o,tc] = sample(A[os,tm], Weights(Awaight))
 
         # 生存企業のリストにIDを追加
         push!(os_adds, o)
@@ -509,7 +511,7 @@ function clear_tp2()
     global Mh, Mf, M, ΔMh, ΔMf, ΔM
     global Lh, Lf, L, ΔLh, ΔLf, ΔL
     global H, ΔH, K, k, DE, DF
-    global NWh, NWf, NWb, NWg, NWg, NW
+    global NWh, NWf, NWb, NWg, NW
     global u, v, A, uw
     global ΔZb, ΔZh, ΔZf
 
@@ -561,10 +563,10 @@ function one_season(TIMERANGE)
         p[os,tc] = ν2*(1.0+ν1.+ν3.*(i[os,tm]./(uT*γ1*k[os,tm]))).*(dropdims(sum(W[:,os,tm], dims=1);dims=1)+Tv[os,tm]+Tc[os,tm]+rL*dropdims(sum(Lf[os,:,tm],dims=2);dims=2)+δ*k[os,tm])./(uT*γ1*k[os,tm]).+(1-ν2)*p_mean
         w_and_W_func(flotation_info)
         Ti[:,tc] = τ1*(dropdims(sum(W[:,os,tm], dims=2);dims=2)+dropdims(sum(Ph[:,os,tm], dims=2);dims=2)+dropdims(sum(S[:,:,tm], dims=2);dims=2))
-        Ta[:,tc] = τ2*(dropdims(sum(Eh[os,:,tm], dims=1);dims=1)+dropdims(sum(Fh[:,:,tm], dims=1);dims=1)+dropdims(sum(Mh[:,:,tm], dims=1);dims=1)-dropdims(sum(Lh[:,:,tm], dims=2);dims=2))
+        Ta[:,tc] = max.(0.0, τ2*(dropdims(sum(Eh[os,:,tm], dims=1);dims=1)+dropdims(sum(Fh[:,:,tm], dims=1);dims=1)+dropdims(sum(Mh[:,:,tm], dims=1);dims=1)-dropdims(sum(Lh[:,:,tm], dims=2);dims=2)))
         Tv[os,tc] = τ3*(dropdims(sum(C[os,:,tm], dims=2);dims=2)+I[os,tm]+G[os,tm])
         Tc[os,tc] = max.(0.0, τ4*P[os,tm])
-        G_func()
+        G_func(t)
         g[os,tc] = G[os,tc]./p[os,tc]
         c_func()
         i[os,tc] = max.(0.0, min.(δ*k[os,tm]+(u[os,tm].-uT).*γ1.*k[os,tm], γ2*(dropdims(sum(Mf[:,os,tm], dims=1);dims=1)-dropdims(sum(Lf[os,:,tm], dims=2);dims=2))./p[os,tc]))
@@ -652,14 +654,13 @@ function one_season(TIMERANGE)
         end
         append!(os, os_adds)
         O += length(os_adds)
-        push!(last_os, deepcopy(os))
+        push!(last_os, sort(deepcopy(os)))
         fund_shortage_bankruptcy()   # 資金繰りが理由の倒産処理
 
         UER[tc] = sum(EMP[:,tc].==0)/J
 
         # t+2 に値を書き込む要素をクリア
         clear_tp2()
-
 
         if t % MAXTIME==0
             all_plot()
@@ -676,8 +677,8 @@ function initialise()
     global K, k, p, H, A
     global NWh, NWf, NWb, NWg, NW
 
-    for _=1:10
-        G_func()
+    for _=1:20
+        G_func(1)
     end
 
     lstj, lsto, lstn = zeros(J), zeros(O), zeros(N)
@@ -762,10 +763,10 @@ function all_plot()
     plot(MAXTIME-STIME+1+2:MAXTIME, dropdims(sum(NLh[:,3:STIME],dims=1);dims=1).+dropdims(sum(NLf[:,3:STIME],dims=1);dims=1).+dropdims(sum(NLb[:,3:STIME],dims=1);dims=1).+NLg[3:STIME])
     savefig("AB_model/figs/transaction_consistency.png")
 
-    plot(MAXTIME-STIME+1+2:MAXTIME,[sum(NLh[:,t])-sum([sum(pe[:,t-1].*Δeh[:,j,t]) for j=1:J])-sum([sum(pf[:,t-1].*Δfh[:,j,t]) for j=1:J])-sum(ΔMh[:,:,t])+sum(ΔLh[:,:,t])-sum(ΔZh[:,t]) for t=3:STIME],label="h")
-    plot!(MAXTIME-STIME+1+2:MAXTIME,[sum(NLf[:,t])+sum(pe[:,t-1].*Δe[:,t])+sum(ΔLf[:,:,t])-sum(ΔMf[:,:,t])-sum(ΔZf[:,t]) for t=3:STIME],label="f")
-    plot!(MAXTIME-STIME+1+2:MAXTIME,[sum(NLb[:,t])-sum([sum(pe[:,t-1].*Δeb[:,n,t]) for n=1:N])-sum(ΔL[:,t])+sum(ΔM[:,t])-sum(ΔH[:,t])-sum(ΔZb[:,t]) for t=3:STIME],label="b")
-    plot!(MAXTIME-STIME+1+2:MAXTIME,[NLg[t]+sum(ΔH[:,t]) for t=3:STIME],label="g")
+    plot(MAXTIME-STIME+1+3:MAXTIME,[sum(NLh[:,t])-sum([sum(pe[:,t-1].*Δeh[:,j,t]) for j=1:J])-sum([sum(pf[:,t-1].*Δfh[:,j,t]) for j=1:J])-sum(ΔMh[:,:,t])+sum(ΔLh[:,:,t])-sum(ΔZh[:,t]) for t=4:STIME],label="h")
+    plot!(MAXTIME-STIME+1+3:MAXTIME,[sum(NLf[:,t])+sum(pe[:,t-1].*Δe[:,t])+sum(ΔLf[:,:,t])-sum(ΔMf[:,:,t])-sum(ΔZf[:,t]) for t=4:STIME],label="f")
+    plot!(MAXTIME-STIME+1+3:MAXTIME,[sum(NLb[:,t])-sum([sum(pe[:,t-1].*Δeb[:,n,t]) for n=1:N])-sum(ΔL[:,t])+sum(ΔM[:,t])-sum(ΔH[:,t])-sum(ΔZb[:,t]) for t=4:STIME],label="b")
+    plot!(MAXTIME-STIME+1+3:MAXTIME,[NLg[t]+sum(ΔH[:,t]) for t=4:STIME],label="g")
     savefig("AB_model/figs/flow_consistency.png")
 
     plot(MAXTIME-STIME+1+2:MAXTIME,dropdims(sum(K[:,3:STIME],dims=1);dims=1).+DE[3:STIME].+DF[3:STIME].-NW[3:STIME], label="all")
@@ -775,9 +776,9 @@ function all_plot()
     plot!(MAXTIME-STIME+1+2:MAXTIME,[-sum(H[:,t])-NWg[t] for t=3:STIME], label="g")
     savefig("AB_model/figs/stock_consistency.png")
 
-    plot(MAXTIME-STIME+1+2:MAXTIME, [dropdims(sum(p[last_os[t],1+(t-1)%STIME],dims=1);dims=1)./length(last_os[t]) for t=MAXTIME-STIME+1+2:MAXTIME], label="p_average")
+    plot(MAXTIME-STIME+1+3:MAXTIME, [dropdims(sum(p[last_os[t],1+(t-1)%STIME],dims=1);dims=1)./length(last_os[t]) for t=MAXTIME-STIME+1+3:MAXTIME], label="p_average")
     savefig("AB_model/figs/p_average.png")
-    plot(MAXTIME-STIME+1+2:MAXTIME, [dropdims(sum(pe[last_os[t],1+(t-1)%STIME],dims=1);dims=1)./length(last_os[t]) for t=MAXTIME-STIME+1+2:MAXTIME], label="pe_average")
+    plot(MAXTIME-STIME+1+3:MAXTIME, [dropdims(sum(pe[last_os[t],1+(t-1)%STIME],dims=1);dims=1)./length(last_os[t]) for t=MAXTIME-STIME+1+3:MAXTIME], label="pe_average")
     savefig("AB_model/figs/pe_average.png")
     plot(MAXTIME-STIME+1+2:MAXTIME, dropdims(sum(pf[:,3:STIME],dims=1);dims=1)./N, label="pf_average")
     savefig("AB_model/figs/pf_average.png")
@@ -789,18 +790,18 @@ function all_plot()
     savefig("AB_model/figs/unemployment_rate.png")
 
     p_means = [(sum(C[:,:,1+(t-1)%STIME])+sum(G[:,1+(t-1)%STIME]))/(sum(c[:,:,1+(t-1)%STIME])+sum(g[:,1+(t-1)%STIME])) for t=1:STIME]
-    plot(MAXTIME-STIME+1+2:MAXTIME, [p_means[1+(t-1)%STIME]/p_means[1+(t-1-1)%STIME]-1.0 for t=MAXTIME-STIME+1+2:MAXTIME], label="inflation rate")
+    plot(MAXTIME-STIME+1+3:MAXTIME, [p_means[1+(t-1)%STIME]/p_means[1+(t-1-1)%STIME]-1.0 for t=MAXTIME-STIME+1+3:MAXTIME], label="inflation rate")
     savefig("AB_model/figs/inflation_rate.png")
 
     A_means = [sum(A[last_os[1+(t-1)%STIME],1+(t-1)%STIME].*(dropdims(sum(c[last_os[1+(t-1)%STIME],:,1+(t-1)%STIME],dims=2);dims=2)+g[last_os[1+(t-1)%STIME],1+(t-1)%STIME])
                 ./(sum(c[last_os[1+(t-1)%STIME],:,1+(t-1)%STIME])+sum(g[last_os[1+(t-1)%STIME],1+(t-1)%STIME]))) for t=1:STIME]
-    plot(MAXTIME-STIME+1+2:MAXTIME, [A_means[1+(t-1)%STIME]/A_means[1+(t-1-1)%STIME]-1.0 for t=MAXTIME-STIME+1+2:MAXTIME], label="A mean growth rate")
+    plot(MAXTIME-STIME+1+3:MAXTIME, [A_means[1+(t-1)%STIME]/A_means[1+(t-1-1)%STIME]-1.0 for t=MAXTIME-STIME+1+3:MAXTIME], label="A mean growth rate")
     savefig("AB_model/figs/A_mean_growth_rate.png")
 
-    plot(MAXTIME-STIME+1+2:MAXTIME, [sum(u[last_os[t],1+(t-1)%STIME])/length(last_os[t]) for t=MAXTIME-STIME+1+2:MAXTIME], label="u_average")
+    plot(MAXTIME-STIME+1+3:MAXTIME, [sum(u[last_os[t],1+(t-1)%STIME])/length(last_os[t]) for t=MAXTIME-STIME+1+3:MAXTIME], label="u_average")
     savefig("AB_model/figs/u_average.png")
 
-    plot(MAXTIME-STIME+1+2:MAXTIME, [sum(v[last_os[t],1+(t-1)%STIME])/length(last_os[t]) for t=MAXTIME-STIME+1+2:MAXTIME], label="v_average")
+    plot(MAXTIME-STIME+1+3:MAXTIME, [sum(v[last_os[t],1+(t-1)%STIME])/length(last_os[t]) for t=MAXTIME-STIME+1+3:MAXTIME], label="v_average")
     savefig("AB_model/figs/v_average.png")
 
     plot(MAXTIME-STIME+1+2:MAXTIME, zeros(STIME-2),label=nothing, color="white")
@@ -863,10 +864,46 @@ function all_plot()
     savefig("AB_model/figs/Mfs.png")
 
     plot(MAXTIME-STIME+1+2:MAXTIME, zeros(STIME-2),label=nothing, color="white")
+    for j=1:J
+        plot!(MAXTIME-STIME+1+2:MAXTIME, dropdims(sum(Mh[:,j,3:STIME],dims=1);dims=1), label=string(j), legend=:outertopright)
+    end
+    savefig("AB_model/figs/Mhs.png")
+
+    plot(MAXTIME-STIME+1+2:MAXTIME, zeros(STIME-2),label=nothing, color="white")
     for o in last_os[end-1]
         plot!(MAXTIME-STIME+1+2:MAXTIME, dropdims(sum(Lf[o,:,3:STIME],dims=1);dims=1), label=string(o), legend=:outertopright)
     end
     savefig("AB_model/figs/Lfs.png")
+
+    plot(MAXTIME-STIME+1+2:MAXTIME, zeros(STIME-2),label=nothing, color="white")
+    for j=1:J
+        plot!(MAXTIME-STIME+1+2:MAXTIME, dropdims(sum(Lh[j,:,3:STIME],dims=1);dims=1), label=string(j), legend=:outertopright)
+    end
+    savefig("AB_model/figs/Lhs.png")
+
+    plot(MAXTIME-STIME+1+2:MAXTIME, zeros(STIME-2),label=nothing, color="white")
+    for o in last_os[end-1]
+        plot!(MAXTIME-STIME+1+2:MAXTIME, dropdims(sum(Eh[o,:,3:STIME],dims=1);dims=1)+dropdims(sum(Eb[o,:,3:STIME],dims=1);dims=1), label=string(o), legend=:outertopright)
+    end
+    savefig("AB_model/figs/aggregate_market_value.png")
+
+    plot(MAXTIME-STIME+1+2:MAXTIME, zeros(STIME-2),label=nothing, color="white")
+    for o in last_os[end-1]
+        plot!(MAXTIME-STIME+1+2:MAXTIME, e[o,3:STIME], label=string(o), legend=:outertopright)
+    end
+    savefig("AB_model/figs/es.png")
+
+    plot(MAXTIME-STIME+1+2:MAXTIME, zeros(STIME-2),label=nothing, color="white")
+    for j=1:J
+        plot!(MAXTIME-STIME+1+2:MAXTIME, [sum(Eh[:,j,t]) for t=3:STIME], label=string(j), legend=:outertopright)
+    end
+    savefig("AB_model/figs/Ehs.png")
+
+    plot(MAXTIME-STIME+1+2:MAXTIME, zeros(STIME-2),label=nothing, color="white")
+    for n=1:N
+        plot!(MAXTIME-STIME+1+2:MAXTIME, [sum(Eb[:,n,t]) for t=3:STIME], label=string(n), legend=:outertopright)
+    end
+    savefig("AB_model/figs/Ebs.png")
 
     plot(MAXTIME-STIME+1+2:MAXTIME, zeros(STIME-2),label=nothing, color="white")
     for o in last_os[end-1]
@@ -903,6 +940,12 @@ function all_plot()
         plot!(MAXTIME-STIME+1+2:MAXTIME, p[o,3:STIME], label=string(o), legend=:outertopright)
     end
     savefig("AB_model/figs/ps.png")
+
+    plot(MAXTIME-STIME+1+2:MAXTIME, zeros(STIME-2),label=nothing, color="white")
+    for o in last_os[end-1]
+        plot!(MAXTIME-STIME+1+2:MAXTIME, pe[o,3:STIME], label=string(o), legend=:outertopright)
+    end
+    savefig("AB_model/figs/pes.png")
 
     plot(MAXTIME-STIME+1+2:MAXTIME, zeros(STIME-2),label=nothing, color="white")
     for n=1:N
@@ -944,6 +987,11 @@ function all_plot()
     plot!(MAXTIME-STIME+1+2:MAXTIME, [sum(G[:,t]) for t=3:STIME], label="G supply")
     savefig("AB_model/figs/G_demand_and_supply.png")
 
+    plot(MAXTIME-STIME+1+2:MAXTIME, [sum(M[:,t]) for t=3:STIME], label="M")
+    plot!(MAXTIME-STIME+1+2:MAXTIME, [sum(Mf[:,:,t]) for t=3:STIME], label="Mf")
+    plot!(MAXTIME-STIME+1+2:MAXTIME, [sum(Mh[:,:,t]) for t=3:STIME], label="Mh")
+    savefig("AB_model/figs/Mh_Mf_M_sum.png")
+
     plot(MAXTIME-STIME+1+2:MAXTIME, zeros(STIME-2),label=nothing, color="white")
     for o=1:OBuffer
         plot!(MAXTIME-STIME+1+2:MAXTIME, [sum(Mf[:,o,t])-sum(Lf[o,:,t]) for t=3:STIME], label=nothing)
@@ -952,7 +1000,7 @@ function all_plot()
 
     plot(MAXTIME-STIME+1+2:MAXTIME, [sum(Ti[:,t]) for t=3:STIME],label="Ti")
     plot!(MAXTIME-STIME+1+2:MAXTIME, [sum(Ta[:,t]) for t=3:STIME],label="Ta")
-    plot!(MAXTIME-STIME+1+2:MAXTIME, [rL*sum(Lh[:,:,t-1]) for t=3:STIME],label="rL*Lh")
+    plot!(MAXTIME-STIME+1+3:MAXTIME, [rL*sum(Lh[:,:,t-1]) for t=4:STIME],label="rL*Lh")
     plot!(MAXTIME-STIME+1+2:MAXTIME, [sum(W[:,:,t]) for t=3:STIME],label="W")
     plot!(MAXTIME-STIME+1+2:MAXTIME, [sum(C[:,:,t]) for t=3:STIME],label="C")
     plot!(MAXTIME-STIME+1+2:MAXTIME, [sum(ITh[:,t]) for t=3:STIME],label="ITh")
@@ -960,7 +1008,7 @@ function all_plot()
     plot!(MAXTIME-STIME+1+2:MAXTIME, [sum(S[:,:,t]) for t=3:STIME],label="S")
     savefig("AB_model/figs/household_transaction.png")
 
-end 
+end
 
 
 # 初期化
