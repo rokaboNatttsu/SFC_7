@@ -2,7 +2,7 @@ using StatsPlots
 using StatsBase
 using Random
 
-J, O, N, Oin, STIME, SEASON = 500, 10, 3, 1, 60, 5
+J, O, N, Oin, STIME, SEASON = 500, 10, 5, 2, 60, 5
 MAXTIME = STIME*SEASON
 OBuffer = O + MAXTIME*Oin
 tm, tc, tp = STIME, 1, 2
@@ -30,6 +30,7 @@ G_calc_item, G_potential, GDemand = ones(O), ones(O), zeros(MAXTIME)
 os = [o for o=1:O]
 last_os = [deepcopy(os)]
 UER = zeros(STIME)
+next_o = O+1
 
 rL = 0.03
 GDemand[1] = 1.0*J
@@ -445,14 +446,8 @@ function flotation() # 起業
     global ΔMh, ΔMf
     global Δe, Δeh
     global k, pe, p, A
+    global next_o
     flotation_info, o_j_value_n_info, os_adds = [], [], []
-    next_o = 1
-    for q=1:size(k)[1]
-        if sum(k[q,:]) == 0.0
-            next_o = q
-            break
-        end
-    end
     prob = max.(0.0, NWh[:, tm])
     prob /= sum(prob)
     floation_count = min(Oin, sum(EMP[:,tc].==0.0))
@@ -496,6 +491,7 @@ function flotation() # 起業
         # 生存企業のリストにIDを追加
         push!(os_adds, o)
     end
+    next_o += floation_count
     # 政府支出受注額決定のための配列を更新
     append!(G_calc_item, [1.0 for _=1:floation_count])
     append!(G_potential, [0.0 for _=1:floation_count])
