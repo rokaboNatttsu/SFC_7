@@ -37,13 +37,13 @@ GDemand[1] = 1.0*J
 uT = 0.8
 
 α1, α2, α3, α4 = 0.9, 0.03, 0.5, 0.01
-β1, β2, β3, β4, β5 = 0.02, 0.001, 0.02, 1.0, 0.7
+β1, β2, β3, β4, β5 = 0.02, 0.001, 0.02, 1.0, 0.8
 γ1, γ2 = 1.0, 0.3
 δ = 0.05
 ϵ1, ϵ2, ϵ3 = 1.0, 1.0, 0.1
 λ1, λ2, λ3, λ4, λ5, λ6, λ7, λ8, λ9, λ10 = 0.3, 1.0, 0.5, 5.0, 0.5, 1.0, 0.1, 0.3, 0.8, 0.5
 τ1, τ2, τ3, τ4 = 0.2, 0.02, 0.1, 0.2
-μ1, μ2 = 0.0, 0.05
+μ1, μ2 = 0.0, 0.1
 ν1, ν2, ν3 = 0.35, 0.5, 1.0
 θ1, θ2 = 0.2, 0.02
 ϕ1, ϕ2 = 0.8, 1.0   # ϕ1<1-θ2
@@ -793,8 +793,11 @@ function all_plot()
     plot(MAXTIME-STIME+1+3:MAXTIME, [p_means[1+(t-1)%STIME]/p_means[1+(t-1-1)%STIME]-1.0 for t=MAXTIME-STIME+1+3:MAXTIME], label="inflation rate")
     savefig("AB_model/figs/inflation_rate.png")
 
-    A_means = [sum(A[last_os[1+(t-1)%STIME],1+(t-1)%STIME].*(dropdims(sum(c[last_os[1+(t-1)%STIME],:,1+(t-1)%STIME],dims=2);dims=2)+g[last_os[1+(t-1)%STIME],1+(t-1)%STIME])
-                ./(sum(c[last_os[1+(t-1)%STIME],:,1+(t-1)%STIME])+sum(g[last_os[1+(t-1)%STIME],1+(t-1)%STIME]))) for t=1:STIME]
+    A_means = [sum(A[last_os[t],1+(t-1)%STIME].*(dropdims(sum(c[last_os[t],:,1+(t-1)%STIME],dims=2);dims=2)+g[last_os[t],1+(t-1)%STIME])
+                ./(sum(c[last_os[t],:,1+(t-1)%STIME])+sum(g[last_os[t],1+(t-1)%STIME]))) for t=MAXTIME-STIME+1:MAXTIME]
+    plot(MAXTIME-STIME+1+3:MAXTIME, [A_means[1+(t-1)%STIME] for t=MAXTIME-STIME+1+3:MAXTIME], label="A mean")
+    savefig("AB_model/figs/A_mean.png")
+
     plot(MAXTIME-STIME+1+3:MAXTIME, [A_means[1+(t-1)%STIME]/A_means[1+(t-1-1)%STIME]-1.0 for t=MAXTIME-STIME+1+3:MAXTIME], label="A mean growth rate")
     savefig("AB_model/figs/A_mean_growth_rate.png")
 
@@ -1021,7 +1024,7 @@ testspan = 40
 # *バーンイン期間
 one_season(2:MAXTIME-testspan-1)
 # *パラメータの変化
-β1 = 0.0
+τ3 = 0.05
 # * パラメータ変化後のシミュレーション
 one_season(MAXTIME-testspan:MAXTIME)
 
